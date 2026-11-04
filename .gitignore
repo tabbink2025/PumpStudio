@@ -1,0 +1,9 @@
+/target/
+/results/
+/pump-studio.exe
+__pycache__/
+*.pyc
+/data/
+/logs/
+/pump-studio-oud.exe
+/*.docx
