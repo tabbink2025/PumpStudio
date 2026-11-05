@@ -4,7 +4,6 @@ import {
 	ArrowLeftRight,
 	CheckCircle2,
 	KeyRound,
-	Loader2,
 	RotateCcw,
 	RotateCw,
 	Send,
@@ -23,7 +22,7 @@ import {
 import type { AnalysisFields, DataPoint, SubmitResult } from "../../../shared/types";
 import { cn } from "../../lib/cn";
 import { duration } from "../../lib/format";
-import { isModKey, overlayOpen } from "../../lib/hotkeys";
+import { isModKey, overlayOpen, useKeys } from "../../lib/hotkeys";
 import { bun, errorMessage } from "../../lib/rpc";
 import { toast, useApp } from "../../lib/store";
 import { Button } from "../ui/Button";
@@ -76,6 +75,7 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 	const rememberTokens = useApp((s) => s.rememberTokens);
 	const recordAnalysis = useApp((s) => s.recordAnalysis);
 	const marketLoading = useApp((s) => !!s.market.all?.loading);
+	const toggleWatch = useApp((s) => s.toggleWatch);
 	const next = useNextToken(mint);
 
 	const mounted = useRef(true);
@@ -200,8 +200,9 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 				: undefined;
 
 	const aiReq = useRef(0);
+	const submittingRef = useRef(false);
 	async function autofill() {
-		if (!dp || !fields || aiStartedAt || !aiReady || result) return;
+		if (!dp || !fields || aiStartedAt || !aiReady || result || submittingRef.current) return;
 		const id = ++aiReq.current;
 		const started = Date.now();
 		setAiStartedAt(started);
@@ -253,7 +254,6 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 
 	/* ---- Submit ------------------------------------------------------------ */
 
-	const submittingRef = useRef(false);
 	function jumpToFirstError() {
 		const key = errorKeys[0];
 		if (!key) return;
@@ -265,11 +265,16 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 		}
 		const el = document.getElementById(sectionId(mint, FIELD_SECTION[key]));
 		el?.scrollIntoView({ block: "start", behavior: "smooth" });
-		el?.focus({ preventScroll: true });
+		// Land on the first control of the section, so the fix is one keypress away.
+		const target =
+			el?.parentElement?.querySelector<HTMLElement>(
+				key === "riskFactors" ? "button[aria-pressed]:not(:disabled)" : "input, [role=radio][aria-checked=true]",
+			) ?? el;
+		target?.focus({ preventScroll: true });
 	}
 
 	async function submit() {
-		if (submittingRef.current || !fields || !dp || result) return;
+		if (submittingRef.current || aiStartedAt != null || !fields || !dp || result) return;
 		setTriedSubmit(true);
 		if (!apiKeySet) return;
 		if (errorKeys.length > 0) {
@@ -283,9 +288,20 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 		try {
 			let d = dp;
 			if (Date.now() - snapshotTime(dp, fetchedAt) > SNAPSHOT_MAX_AGE_MS) {
-				const fresh = await load({ silent: true });
-				if (!fresh) throw new Error("Could not refresh the snapshot before submitting. Check your connection and try again.");
-				d = fresh;
+				// Fetch directly (not via load) so leaving the screen mid-submit cannot cancel it.
+				const id = ++loadReq.current;
+				if (mounted.current) setLoading(true);
+				try {
+					d = await bun.getDataPoint(mint);
+				} catch (err) {
+					throw new Error(`Could not refresh the snapshot before submitting: ${errorMessage(err)}`);
+				} finally {
+					if (id === loadReq.current && mounted.current) setLoading(false);
+				}
+				if (mounted.current) {
+					setDp(d);
+					setFetchedAt(Date.now());
+				}
 			}
 			const res = await bun.submitAnalysis(buildPayload(d, sent));
 			if (!res.ok) throw new Error(res.error || "The server did not accept this analysis");
@@ -344,6 +360,33 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
 	}, [active]);
+
+	// While the AI runs the form is read-only, for the keyboard too (inert).
+	const formWrap = useRef<HTMLDivElement>(null);
+	const aiBusy = aiStartedAt != null;
+	const focusBeforeAi = useRef<HTMLElement | null>(null);
+	useEffect(() => {
+		const el = formWrap.current;
+		if (!el) return;
+		if (aiBusy) {
+			focusBeforeAi.current = document.activeElement as HTMLElement | null;
+			el.setAttribute("inert", "");
+			return;
+		}
+		el.removeAttribute("inert");
+		// Inert drops focus to <body>; put it back where the user was.
+		const prev = focusBeforeAi.current;
+		focusBeforeAi.current = null;
+		if (prev?.isConnected && document.activeElement === document.body) prev.focus({ preventScroll: true });
+	}, [aiBusy, dp, result]);
+
+	// Single-key shortcuts outside text fields.
+	useKeys((e) => {
+		if (e.key.toLowerCase() === "w" && !e.shiftKey) {
+			toggleWatch(mint);
+			return true;
+		}
+	}, active && !!dp);
 
 	/* ---- Render ------------------------------------------------------------ */
 
@@ -409,16 +452,16 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 						<div className="relative min-h-0 flex-1 overflow-y-auto">
 							<div className="mx-auto w-full max-w-[780px] px-6 pb-8 pt-5">
 								{/* Form top bar */}
-								<div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-									<div className="flex min-w-[240px] flex-1 items-center gap-2.5">
-										<h2 className="shrink-0 text-md font-semibold text-fg">Your analysis</h2>
+								<div className="mb-4 flex items-center gap-3">
+									<div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+										<h2 className="text-md font-semibold leading-5 text-fg">Your analysis</h2>
 										{aiRunning ? (
-											<span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-violet" role="status">
-												<Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+											<span className="inline-flex h-5 min-w-0 max-w-full items-center gap-1.5 text-sm text-violet" role="status">
+												<Sparkles className="size-3.5 shrink-0 animate-pulse" aria-hidden />
 												<span className="truncate">
 													Asking {provider} about ${dp.symbol}
 												</span>
-												<span className="num text-fg-3">{duration(now - aiStartedAt)}</span>
+												<span className="num shrink-0 text-fg-3">{duration(now - aiStartedAt)}</span>
 											</span>
 										) : (
 											<SourceChip source={source} />
@@ -474,10 +517,11 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 								)}
 
 								<div
+									ref={formWrap}
 									aria-busy={aiRunning || undefined}
 									className={cn(
 										"transition-opacity duration-base",
-										aiRunning && "pointer-events-none select-none opacity-50",
+										aiRunning && "pointer-events-none select-none opacity-60",
 									)}
 								>
 									<AnalysisForm
@@ -513,6 +557,11 @@ export function AnalyzeWorkspace({ mint, active }: { mint: string; active: boole
 												<Button size="sm" variant="secondary" onClick={() => setView("settings")}>
 													Set up
 												</Button>
+											</div>
+										) : aiRunning ? (
+											<div className="flex items-center gap-2 text-base text-fg-3" role="status">
+												<Sparkles className="size-4 shrink-0 text-violet" aria-hidden />
+												<span className="truncate">Waiting for {provider}. Submit unlocks when the values arrive.</span>
 											</div>
 										) : errorKeys.length > 0 ? (
 											<button
@@ -564,7 +613,7 @@ function Chip({ tone, icon, title, children }: { tone: "neutral" | "violet" | "w
 		<span
 			title={title}
 			className={cn(
-				"inline-flex h-5 min-w-0 items-center gap-1 rounded border px-1.5 text-[11px] font-medium leading-none",
+				"inline-flex h-5 min-w-0 max-w-full items-center gap-1 rounded border px-1.5 text-[11px] font-medium leading-none",
 				tones[tone],
 			)}
 		>
@@ -577,9 +626,10 @@ function Chip({ tone, icon, title, children }: { tone: "neutral" | "violet" | "w
 function SourceChip({ source }: { source: FillSource }) {
 	if (source.kind === "ai") {
 		const secs = `${(source.durationMs / 1000).toFixed(1)}s`;
-		const text = [`Filled by ${engineName(source.engine)}`, source.model, secs].filter(Boolean).join(" · ");
+		const text = `Filled by ${engineName(source.engine)} · ${secs}`;
+		const full = [`Filled by ${engineName(source.engine)}`, source.model, `in ${secs}`].filter(Boolean).join(" · ");
 		return (
-			<Chip tone="violet" icon={<Sparkles className="size-3 shrink-0" aria-hidden />} title={text}>
+			<Chip tone="violet" icon={<Sparkles className="size-3 shrink-0" aria-hidden />} title={full}>
 				{text}
 			</Chip>
 		);

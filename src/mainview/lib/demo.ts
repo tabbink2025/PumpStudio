@@ -218,7 +218,7 @@ export function createDemoBackend(emit: Emit) {
 			await wait(500);
 			if (rng(hash(d.mint))() < 0.08) {
 				training.failed++;
-				set({ step: "error", error: "Rate limited by pump.studio. Wait a moment and try again." });
+				set({ step: "error", failedStep: "submitting", error: "Rate limited by pump.studio. Wait a moment and try again." });
 			} else {
 				const validated = rng(hash(d.mint) + 3)() > 0.15;
 				const earned = submit(validated);

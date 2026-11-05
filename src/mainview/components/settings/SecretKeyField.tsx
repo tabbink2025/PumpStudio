@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ClipboardPaste, Eye, EyeOff, KeyRound } from "lucide-react";
+import { errorMessage } from "../../lib/rpc";
 import { toast } from "../../lib/store";
 import { Button, IconButton } from "../ui/Button";
 import { FieldMessage } from "../ui/primitives";
@@ -50,6 +51,7 @@ export function SecretKeyField({
 	const id = useId();
 	const msgId = useId();
 	const inputRef = useRef<HTMLInputElement>(null);
+	const replaceRef = useRef<HTMLButtonElement>(null);
 	const [replacing, setReplacing] = useState(false);
 	const [value, setValue] = useState("");
 	const [reveal, setReveal] = useState(false);
@@ -61,10 +63,19 @@ export function SecretKeyField({
 
 	const editing = !isSet || replacing;
 
-	// Leave replace mode when the key is saved elsewhere (e.g. a created key).
+	// Leave replace mode when the stored key changes elsewhere (removed, or a
+	// newly created agent key was saved while this field was open).
 	useEffect(() => {
-		if (!isSet) setReplacing(false);
-	}, [isSet]);
+		setReplacing(false);
+		setValue("");
+		setError(null);
+		setRetry(null);
+	}, [isSet, hint]);
+
+	/** The input unmounts on cancel/save, so hand focus to Replace key. */
+	function focusReplace() {
+		setTimeout(() => replaceRef.current?.focus(), 0);
+	}
 
 	function startReplace() {
 		setReplacing(true);
@@ -77,7 +88,9 @@ export function SecretKeyField({
 		setReplacing(false);
 		setValue("");
 		setError(null);
+		setRetry(null);
 		setReveal(false);
+		focusReplace();
 	}
 
 	async function submit() {
@@ -94,12 +107,19 @@ export function SecretKeyField({
 		setBusy(true);
 		setError(null);
 		setRetry(null);
-		const r = await fn();
-		setBusy(false);
+		let r: SubmitOutcome;
+		try {
+			r = await fn();
+		} catch (err) {
+			r = { ok: false, error: errorMessage(err) };
+		} finally {
+			setBusy(false);
+		}
 		if (r.ok) {
 			setValue("");
 			setReveal(false);
 			setReplacing(false);
+			focusReplace();
 		} else {
 			setError(r.error);
 			setRetry(r.retry ?? null);
@@ -124,17 +144,31 @@ export function SecretKeyField({
 
 	async function remove() {
 		setRemoving(true);
-		const ok = await onRemove();
-		setRemoving(false);
-		if (ok) setConfirmRemove(false);
+		let ok = false;
+		try {
+			ok = await onRemove();
+		} finally {
+			setRemoving(false);
+		}
+		if (ok) {
+			setConfirmRemove(false);
+			// The Remove button is gone; continue in the empty key field.
+			setTimeout(() => inputRef.current?.focus(), 0);
+		}
 	}
 
 	return (
 		<div>
 			<div className="mb-1.5 flex items-center gap-2">
-				<label htmlFor={editing ? id : undefined} id={`${id}-label`} className="text-sm font-medium text-fg-2">
-					{label}
-				</label>
+				{editing ? (
+					<label htmlFor={id} id={`${id}-label`} className="text-sm font-medium text-fg-2">
+						{label}
+					</label>
+				) : (
+					<span id={`${id}-label`} className="text-sm font-medium text-fg-2">
+						{label}
+					</span>
+				)}
 				{saved !== undefined && <SavedMark show={saved} />}
 			</div>
 
@@ -142,6 +176,7 @@ export function SecretKeyField({
 				<>
 					<div className="flex flex-wrap items-center gap-2">
 						<div
+							role="group"
 							aria-labelledby={`${id}-label`}
 							className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-surface-1 px-2.5"
 						>
@@ -150,7 +185,7 @@ export function SecretKeyField({
 								{hint || "Key saved"}
 							</span>
 						</div>
-						<Button size="md" onClick={startReplace}>
+						<Button ref={replaceRef} size="md" onClick={startReplace}>
 							Replace key
 						</Button>
 						<Button size="md" variant="ghost" className="text-neg hover:text-neg" onClick={() => setConfirmRemove(true)}>

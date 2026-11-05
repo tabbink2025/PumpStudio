@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, Check, ClipboardPaste, Clock, LayoutList, Star, Zap } from "lucide-react";
 import { extractMint, shortMint } from "../../../shared/analysis";
 import { cn } from "../../lib/cn";
@@ -22,6 +22,11 @@ export function MintPicker({ active }: { active: boolean }) {
 	const errId = `${id}-err`;
 
 	const focusInput = () => document.getElementById(id)?.focus();
+
+	// Coming back to the screen puts the cursor in the field, ready to paste.
+	useEffect(() => {
+		if (active) requestAnimationFrame(() => document.getElementById(id)?.focus({ preventScroll: true }));
+	}, [active, id]);
 
 	function load(raw: string) {
 		const mint = extractMint(raw);
@@ -85,7 +90,6 @@ export function MintPicker({ active }: { active: boolean }) {
 					<div className="flex gap-2">
 						<TextInput
 							id={id}
-							autoFocus={active}
 							value={value}
 							onChange={(e) => {
 								setValue(e.target.value);
@@ -96,7 +100,7 @@ export function MintPicker({ active }: { active: boolean }) {
 							aria-describedby={error ? errId : undefined}
 							spellCheck={false}
 							autoComplete="off"
-							className="h-10"
+							className="!h-10"
 						/>
 						<Button size="lg" onClick={() => void paste()} icon={<ClipboardPaste className="size-4" />}>
 							Paste

@@ -170,9 +170,14 @@ export class Trainer {
 					this.state.skipped++;
 					this.update(i, { step: "skipped", error: "Token is on cooldown" });
 				} else {
+					const at = this.state.items[i]?.step;
 					this.state.failed++;
 					this.state.lastError = message;
-					this.update(i, { step: "error", error: message });
+					this.update(i, {
+						step: "error",
+						error: message,
+						failedStep: at === "fetching" || at === "analyzing" || at === "submitting" ? at : undefined,
+					});
 				}
 				if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
 					this.state.status = "stopping"; // a bad key fails every token: stop early

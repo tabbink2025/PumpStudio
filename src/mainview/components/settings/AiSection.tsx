@@ -22,7 +22,7 @@ const PROVIDERS: Provider[] = [
 	{
 		id: "manual",
 		name: "Data rules",
-		vendor: "Built in",
+		vendor: "Built in, no key",
 		blurb: "Free and instant. Uses the official Pump Studio heuristics.",
 		icon: <Gauge className="size-4" aria-hidden />,
 	},
@@ -30,15 +30,15 @@ const PROVIDERS: Provider[] = [
 		id: "claude",
 		name: "Claude",
 		vendor: "Anthropic",
-		blurb: "Reads the snapshot and writes a reasoned summary.",
+		blurb: "Reads the full snapshot and writes a reasoned summary.",
 		icon: <Sparkles className="size-4" aria-hidden />,
 		badge: <Badge tone="brand">Recommended</Badge>,
 	},
 	{
 		id: "openai",
 		name: "OpenAI",
-		vendor: "OpenAI",
-		blurb: "GPT models with the same prompt and checks.",
+		vendor: "GPT models",
+		blurb: "Same prompt and checks, billed to your OpenAI key.",
 		icon: <Sparkles className="size-4" aria-hidden />,
 	},
 ];
@@ -62,10 +62,13 @@ const PROVIDER_META = {
 	},
 } as const;
 
+export const AI_CHOSEN_EVENT = "pumpstudio:ai-chosen";
+
 function markChosen() {
 	try {
 		localStorage.setItem(AI_CHOSEN_KEY, "1");
 	} catch {}
+	window.dispatchEvent(new Event(AI_CHOSEN_EVENT));
 }
 
 export function AiSection({ id, config }: { id: string; config: PublicConfig }) {
@@ -107,7 +110,7 @@ export function AiSection({ id, config }: { id: string; config: PublicConfig }) 
 			id={id}
 			title="AI analysis"
 			icon={<Sparkles className="size-4" aria-hidden />}
-			description="How the analysis form gets filled in, in Analyze and during auto train. You always review before submitting."
+			description="What fills in the analysis form in Analyze and auto train. You review before you submit."
 		>
 			<div className="px-5 py-4">
 				<div className="mb-2 flex items-center gap-2">
@@ -245,6 +248,8 @@ function ProviderSettings({ provider, config }: { provider: "claude" | "openai";
 							<button
 								type="button"
 								className="rounded text-sm text-fg-3 underline decoration-dotted underline-offset-2 hover:text-fg"
+								// Keep focus in the field so its blur does not save the typed value first.
+								onMouseDown={(e) => e.preventDefault()}
 								onClick={() => void saveModel(meta.defaultModel)}
 							>
 								Use default {meta.defaultModel}

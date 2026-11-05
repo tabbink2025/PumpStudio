@@ -279,6 +279,8 @@ export interface TrainingItem {
 	deviationPct?: number;
 	source?: OrchestratorResult["source"];
 	error?: string;
+	/** Pipeline stage that failed, when step is "error". */
+	failedStep?: "fetching" | "analyzing" | "submitting";
 	updatedAt: number;
 }
 

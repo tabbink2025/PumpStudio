@@ -5,7 +5,7 @@ import { cn } from "../../lib/cn";
 import { bun, errorMessage } from "../../lib/rpc";
 import { useApp } from "../../lib/store";
 import { Button } from "../ui/Button";
-import { Badge, Banner, FieldLabel, FieldMessage, TextArea, TextInput } from "../ui/primitives";
+import { Badge, Banner, FieldLabel, FieldMessage, TextInput } from "../ui/primitives";
 import { SecretKeyField, type SubmitOutcome } from "./SecretKeyField";
 import { CopyButton, LinkButton, SettingsSection, useSavedFlash } from "./shared";
 
@@ -19,17 +19,29 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 	const saveConfig = useApp((s) => s.saveConfig);
 	const [check, setCheck] = useState<CheckState>({ kind: "idle" });
 	const [savedKey, markSaved] = useSavedFlash();
-	const [created, setCreated] = useState<RegisteredKey | null>(null);
+	const [created, setCreated] = useState<{ key: RegisteredKey; saved: boolean } | null>(null);
 	const [createOpen, setCreateOpen] = useState(!config.apiKeySet);
+	// Collapse the create panel once a key is in place, open it again when removed.
+	useEffect(() => setCreateOpen(!config.apiKeySet), [config.apiKeySet]);
+
+	// Every status change bumps the sequence, so a slow check that finishes
+	// after the key was replaced or removed cannot overwrite the newer status.
+	const checkSeq = useRef(0);
+	function setCheckNow(next: CheckState) {
+		checkSeq.current += 1;
+		setCheck(next);
+	}
 
 	async function runCheck() {
-		setCheck({ kind: "checking" });
+		setCheckNow({ kind: "checking" });
+		const seq = checkSeq.current;
+		let result: KeyCheck;
 		try {
-			const result = await bun.checkApiKey();
-			setCheck({ kind: "done", result, at: Date.now() });
+			result = await bun.checkApiKey();
 		} catch (err) {
-			setCheck({ kind: "done", result: { status: "unreachable", message: errorMessage(err) }, at: Date.now() });
+			result = { status: "unreachable", message: errorMessage(err) };
 		}
+		if (seq === checkSeq.current) setCheck({ kind: "done", result, at: Date.now() });
 	}
 
 	// Check the stored key once, the first time this screen is opened.
@@ -54,13 +66,13 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 		if (result.status === "invalid") {
 			return {
 				ok: false,
-				error: `Key rejected: ${result.message}.`,
+				error: `Key rejected: ${result.message}`,
 				retry: { label: "Save anyway", run: () => submitKey(value, true) },
 			};
 		}
 		const next = await saveConfig({ apiKey: value }, { silent: true });
 		if (!next) return { ok: false, error: "Could not save the key. Try again." };
-		setCheck(force ? { kind: "idle" } : { kind: "done", result, at: Date.now() });
+		setCheckNow(force ? { kind: "idle" } : { kind: "done", result, at: Date.now() });
 		markSaved("apiKey");
 		return { ok: true };
 	}
@@ -68,7 +80,7 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 	async function removeKey() {
 		const next = await saveConfig({ apiKey: null }, { silent: true });
 		if (next) {
-			setCheck({ kind: "idle" });
+			setCheckNow({ kind: "idle" });
 			setCreated(null);
 			setCreateOpen(true);
 			useApp.getState().toast({ kind: "info", title: "pump.studio key removed", duration: 3000 });
@@ -81,7 +93,7 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 			id={id}
 			title="Account"
 			icon={<User className="size-4" aria-hidden />}
-			description="Your pump.studio agent key. It signs every analysis you submit, so XP lands on your agent."
+			description="Your agent key signs every analysis you submit, so XP lands on your agent."
 			action={
 				config.apiKeySet ? (
 					<Badge tone="pos" dot>
@@ -114,7 +126,7 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 
 			{created && (
 				<div className="px-5 py-4">
-					<CreatedKey created={created} onDone={() => setCreated(null)} />
+					<CreatedKey created={created.key} saved={created.saved} onDone={() => setCreated(null)} />
 				</div>
 			)}
 
@@ -125,8 +137,8 @@ export function AccountSection({ id, config, active }: { id: string; config: Pub
 					replacing={config.apiKeySet}
 					onCreated={async (k) => {
 						const next = await saveConfig({ apiKey: k.key }, { silent: true });
-						setCreated(k);
-						setCreateOpen(false);
+						// Show the key either way: if saving failed it is the only copy.
+						setCreated({ key: k, saved: !!next });
 						if (next) {
 							markSaved("apiKey");
 							void runCheck();
@@ -293,20 +305,12 @@ function CreateKeyPanel({
 							<FieldLabel htmlFor={descId} hint="Optional">
 								Description
 							</FieldLabel>
-							<TextArea
+							<TextInput
 								id={descId}
 								value={desc}
-								rows={1}
 								maxLength={DESC_MAX}
 								placeholder="What this agent does"
-								className="h-8 py-1.5"
 								onChange={(e) => setDesc(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && !e.shiftKey) {
-										e.preventDefault();
-										void create();
-									}
-								}}
 							/>
 						</div>
 					</div>
@@ -316,7 +320,7 @@ function CreateKeyPanel({
 						</Banner>
 					)}
 					<div className="flex items-center gap-3">
-						<Button type="submit" variant={replacing ? "secondary" : "primary"} loading={busy}>
+						<Button type="submit" loading={busy} icon={<Plus className="size-3.5" aria-hidden />}>
 							Create key
 						</Button>
 						<span className="text-sm text-fg-3">The key is saved here and shown once so you can copy it.</span>
@@ -327,12 +331,18 @@ function CreateKeyPanel({
 	);
 }
 
-function CreatedKey({ created, onDone }: { created: RegisteredKey; onDone: () => void }) {
+function CreatedKey({ created, saved, onDone }: { created: RegisteredKey; saved: boolean; onDone: () => void }) {
 	return (
-		<div className="rounded-lg border border-pos/25 bg-pos/5 p-3">
-			<div className="flex items-center gap-2">
-				<CheckCircle2 className="size-4 text-pos" aria-hidden />
-				<span className="text-base font-medium text-fg">Agent key created and saved</span>
+		<div className={cn("rounded-lg border p-3", saved ? "border-pos/25 bg-pos/5" : "border-warn/25 bg-warn/5")}>
+			<div className="flex flex-wrap items-center gap-2">
+				{saved ? (
+					<CheckCircle2 className="size-4 shrink-0 text-pos" aria-hidden />
+				) : (
+					<AlertTriangle className="size-4 shrink-0 text-warn" aria-hidden />
+				)}
+				<span className="text-base font-medium text-fg">
+					{saved ? "Agent key created and saved" : "Agent key created but not saved"}
+				</span>
 				{created.type && <Badge>{created.type}</Badge>}
 				{created.rateLimit != null && (
 					<span className="num text-sm text-fg-3">Rate limit {created.rateLimit}</span>
@@ -345,7 +355,9 @@ function CreatedKey({ created, onDone }: { created: RegisteredKey; onDone: () =>
 			<div className="mt-2.5 flex items-start justify-between gap-3">
 				<p className="flex items-start gap-1.5 text-sm text-warn">
 					<AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-					Copy it now and keep it safe. You can always paste it again here.
+					{saved
+						? "Copy it now and keep it safe. You can always paste it again here."
+						: "Copy it now and paste it in the key field above. It is not shown again."}
 				</p>
 				<Button size="sm" onClick={onDone}>
 					Done

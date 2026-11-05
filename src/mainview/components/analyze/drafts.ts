@@ -33,6 +33,8 @@ export function getDraft(mint: string): Draft | undefined {
 }
 
 export function saveDraft(mint: string, d: Draft) {
+	// Re-insert so the Map order tracks the most recently used draft.
+	drafts.delete(mint);
 	drafts.set(mint, d);
 	// Keep memory bounded: drop the oldest drafts beyond 30.
 	if (drafts.size > 30) {

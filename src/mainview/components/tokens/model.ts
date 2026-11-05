@@ -79,9 +79,12 @@ export function applyFilters(
 	query: string,
 	analyzed: Record<string, MyAnalysis>,
 	now: number,
+	/** Mint found in the query (pasted address or URL): match it exactly. */
+	mint?: string | null,
 ): MarketToken[] {
-	const q = query.trim().toLowerCase().replace(/^\$/, "");
+	const q = mint ? "" : query.trim().toLowerCase().replace(/^\$/, "");
 	return tokens.filter((t) => {
+		if (mint && t.mint !== mint) return false;
 		if (filters.has("notAnalyzed") && analyzed[t.mint]) return false;
 		if (filters.has("live") && !t.is_currently_live) return false;
 		if (filters.has("onCurve") && t.complete === true) return false;

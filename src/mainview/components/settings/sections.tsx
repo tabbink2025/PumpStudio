@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { Cpu, Database, Info, Keyboard, Monitor, Moon, Palette, Sun } from "lucide-react";
 import type { Density, PublicConfig, ThemePref, UiPrefs } from "../../../shared/types";
 import { integer, plural } from "../../lib/format";
-import { isDemo } from "../../lib/rpc";
+import { errorMessage, isDemo } from "../../lib/rpc";
 import { useApp } from "../../lib/store";
 import { Button } from "../ui/Button";
 import { Badge, FieldMessage, Kbd, MOD, Segmented, Skeleton } from "../ui/primitives";
@@ -33,21 +33,12 @@ export function AutoTrainSection({ id, config }: { id: string; config: PublicCon
 	useEffect(() => setText(String(config.analyzeInterval)), [config.analyzeInterval]);
 
 	const n = Number(text);
-	const valid = text.trim() !== "" && Number.isFinite(n) && n >= MIN_INTERVAL && n <= MAX_INTERVAL;
-	const perMin = valid ? 60 / n : 60 / config.analyzeInterval;
-	const perMinText = perMin >= 1 ? integer(Math.floor(perMin * 10) / 10) : `less than 1`;
+	const filled = text.trim() !== "" && Number.isFinite(n);
+	const valid = filled && n >= MIN_INTERVAL && n <= MAX_INTERVAL;
 
 	async function commit() {
-		if (!valid) {
-			// Clamp instead of rejecting, so the field never stays broken.
-			const clamped = Number.isFinite(n) && text.trim() !== "" ? Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.round(n))) : config.analyzeInterval;
-			setText(String(clamped));
-			if (clamped === config.analyzeInterval) return;
-			const next = await saveConfig({ analyzeInterval: clamped }, { silent: true });
-			if (next) markSaved("interval");
-			return;
-		}
-		const v = Math.round(n);
+		// Clamp instead of rejecting, so the field never stays broken.
+		const v = filled ? Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.round(n))) : config.analyzeInterval;
 		setText(String(v));
 		if (v === config.analyzeInterval) return;
 		const next = await saveConfig({ analyzeInterval: v }, { silent: true });
@@ -77,9 +68,7 @@ export function AutoTrainSection({ id, config }: { id: string; config: PublicCon
 						{valid && (
 							<>
 								{" "}
-								At <span className="num">{integer(n)}</span> s that is about{" "}
-								<span className="num font-medium text-fg-2">{perMinText}</span> {perMin === 1 ? "token" : "tokens"} per
-								minute.
+								At <span className="num">{integer(Math.round(n))}</span> s that is <Throughput seconds={n} />.
 							</>
 						)}
 					</>
@@ -128,6 +117,17 @@ export function AutoTrainSection({ id, config }: { id: string; config: PublicCon
 				description="Avoids duplicate submissions that pump.studio would not reward."
 			/>
 		</SettingsSection>
+	);
+}
+
+/** "about 6 tokens per minute", or per hour once it drops below one a minute. */
+function Throughput({ seconds }: { seconds: number }) {
+	const perMin = 60 / seconds;
+	const [count, unit] = perMin >= 1 ? [Math.round(perMin), "minute"] : [Math.round(3600 / seconds), "hour"];
+	return (
+		<>
+			about <span className="num font-medium text-fg-2">{integer(count)}</span> {count === 1 ? "token" : "tokens"} per {unit}
+		</>
 	);
 }
 
@@ -260,7 +260,7 @@ export function DataSection({ id, config }: { id: string; config: PublicConfig }
 				toast({
 					kind: "info",
 					title: copy.done,
-					description: `${integer(prev.length)} ${plural(prev.length, "token")} removed`,
+					description: `${plural(prev.length, "token")} removed`,
 					action: { label: "Undo", run: () => useApp.getState().setPrefs({ watchlist: prev }) },
 					duration: 6000,
 				});
@@ -280,7 +280,7 @@ export function DataSection({ id, config }: { id: string; config: PublicConfig }
 				localStorage.removeItem(ANALYZED_STORAGE_KEY);
 			} catch (err) {
 				ok = false;
-				toast({ kind: "error", title: "Could not clear stored history", description: String(err) });
+				toast({ kind: "error", title: "Could not clear stored history", description: errorMessage(err) });
 			}
 			if (ok) {
 				markSaved(kind);
@@ -324,7 +324,7 @@ export function DataSection({ id, config }: { id: string; config: PublicConfig }
 				count={recentCount}
 				unit="token"
 				saved={saved === "recent"}
-				action="Clear recent tokens"
+				action="Clear recent"
 				onClick={() => setConfirm("recent")}
 			/>
 			<ClearRow
@@ -334,7 +334,7 @@ export function DataSection({ id, config }: { id: string; config: PublicConfig }
 				hint="Powers the analyzed badges and filters."
 				saved={saved === "history"}
 				label2="Cleared"
-				action="Clear my local analysis history"
+				action="Clear history"
 				onClick={() => setConfirm("history")}
 			/>
 			<ConfirmDialog
@@ -377,11 +377,18 @@ function ClearRow({
 					<SavedMark show={saved} label={label2} />
 				</div>
 				<div className="text-sm text-fg-3">
-					<span className="num">{integer(count)}</span> {plural(count, unit)}
+					<span className="num">{plural(count, unit)}</span>
 					{hint && <> · {hint}</>}
 				</div>
 			</div>
-			<Button size="sm" variant="ghost" className="text-neg hover:text-neg" disabled={count === 0} onClick={onClick}>
+			<Button
+				size="sm"
+				variant="ghost"
+				className={count === 0 ? "text-fg-3" : "text-neg hover:text-neg"}
+				disabled={count === 0}
+				title={count === 0 ? "Nothing to clear" : undefined}
+				onClick={onClick}
+			>
 				{action}
 			</Button>
 		</div>
@@ -393,7 +400,7 @@ function ClearRow({
 export function AboutSection({ id }: { id: string }) {
 	const setShortcuts = useApp((s) => s.setShortcuts);
 	return (
-		<SettingsSection id={id} title="About" icon={<Info className="size-4" aria-hidden />}>
+		<SettingsSection id={id} title="About" description="Version, help and credits." icon={<Info className="size-4" aria-hidden />}>
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">

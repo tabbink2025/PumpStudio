@@ -1,13 +1,13 @@
 import { memo, useEffect, useState, type ReactNode, type RefObject } from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, GraduationCap, Radio, Zap } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Copy, GraduationCap, Radio, Zap } from "lucide-react";
 import type { MarketToken } from "../../../shared/types";
 import { cn } from "../../lib/cn";
 import { absoluteTime, ageShort, ago, usdCompact } from "../../lib/format";
 import type { MyAnalysis } from "../../lib/store";
-import { CopyMint, SentimentBadge, TokenAvatar, TokenStatus, WatchButton } from "../token/widgets";
+import { SentimentBadge, TokenAvatar, TokenStatus, WatchButton } from "../token/widgets";
 import { Button, IconButton } from "../ui/Button";
 import { Skeleton } from "../ui/primitives";
-import { marketCap, type Sort, type SortKey } from "./model";
+import { copyMint, marketCap, type Sort, type SortKey } from "./model";
 
 /* ---- Responsive columns ------------------------------------------------ */
 
@@ -36,13 +36,13 @@ const CELL = "px-[var(--cell-px)] first:pl-5 last:pr-5";
 function Cols({ tier }: { tier: Tier }) {
 	return (
 		<colgroup>
-			<col style={{ width: 60 }} />
+			{tier !== "narrow" && <col style={{ width: 52 }} />}
 			<col />
 			<col style={{ width: 64 }} />
 			<col style={{ width: 116 }} />
 			{tier === "full" && <col style={{ width: 128 }} />}
 			{tier !== "narrow" && <col style={{ width: 124 }} />}
-			<col style={{ width: tier === "narrow" ? 88 : 140 }} />
+			<col style={{ width: tier === "full" ? 168 : 92 }} />
 		</colgroup>
 	);
 }
@@ -101,7 +101,12 @@ function Head({ tier, sort, onSort }: { tier: Tier; sort?: Sort; onSort?: (k: So
 	return (
 		<thead>
 			<tr>
-				<Th align="right">#</Th>
+				{tier !== "narrow" && (
+					<Th align="right">
+						<span aria-hidden>#</span>
+						<span className="sr-only">Rank</span>
+					</Th>
+				)}
 				<Th sortKey="name" sort={sort} onSort={onSort}>
 					Token
 				</Th>
@@ -144,6 +149,37 @@ function StatusIcons({ live, graduated }: { live?: boolean; graduated?: boolean 
 
 /* ---- Row --------------------------------------------------------------- */
 
+/** Revealed on row hover or keyboard focus (still reachable with Tab). */
+const HOVER_ONLY = "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100";
+
+function SelectedBar() {
+	return <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-brand" />;
+}
+
+/** Icon-only copy for table rows; the inspector shows the full CopyMint. */
+function RowCopy({ mint, visible }: { mint: string; visible: boolean }) {
+	const [copied, setCopied] = useState(false);
+	useEffect(() => {
+		if (!copied) return;
+		const id = setTimeout(() => setCopied(false), 1500);
+		return () => clearTimeout(id);
+	}, [copied]);
+	return (
+		<IconButton
+			size="sm"
+			label="Copy mint address"
+			title={`Copy mint ${mint} (C)`}
+			onClick={(e) => {
+				e.stopPropagation();
+				void copyMint(mint).then(() => setCopied(true));
+			}}
+			className={cn("transition-opacity", !visible && HOVER_ONLY)}
+		>
+			{copied ? <Check className="size-3.5 text-pos" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+		</IconButton>
+	);
+}
+
 const Row = memo(function Row({
 	token: t,
 	rank,
@@ -172,11 +208,14 @@ const Row = memo(function Row({
 			onClick={() => onOpen(t.mint)}
 			className={cn("group h-row scroll-mt-9 transition-colors duration-fast", selected ? "bg-surface-3" : "focus-within:bg-surface-2 hover:bg-surface-2")}
 		>
-			<td className={cn("relative border-b border-line text-right", CELL)}>
-				{selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-brand" />}
-				<span className="num text-sm text-fg-3">{rank}</span>
-			</td>
+			{tier !== "narrow" && (
+				<td className={cn("relative border-b border-line text-right", CELL)}>
+					{selected && <SelectedBar />}
+					<span className="num text-sm text-fg-3">{rank}</span>
+				</td>
+			)}
 			<td className={cn("relative border-b border-line", CELL)}>
+				{selected && tier === "narrow" && <SelectedBar />}
 				<div className="flex min-w-0 items-center gap-1.5">
 					<button
 						type="button"
@@ -201,16 +240,6 @@ const Row = memo(function Row({
 						<StatusIcons live={t.is_currently_live} graduated={t.complete === true} />
 					)}
 				</div>
-				{/* Overlays the end of the cell on hover/focus, so it never takes space from the name. */}
-				<span
-					className={cn(
-						"pointer-events-none absolute inset-y-0 right-1 flex items-center pl-2 opacity-0 transition-opacity duration-fast",
-						"group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
-						selected ? "bg-surface-3" : "bg-surface-2",
-					)}
-				>
-					<CopyMint mint={t.mint} />
-				</span>
 			</td>
 			<td className={cn("border-b border-line text-right", CELL)}>
 				<span className="num text-fg-2" title={t.created_timestamp ? absoluteTime(t.created_timestamp) : undefined}>
@@ -232,19 +261,22 @@ const Row = memo(function Row({
 							<SentimentBadge value={mine.sentiment} score={mine.score} />
 						</span>
 					) : (
-						<span className="text-fg-3" aria-label="Not analyzed">
-							—
+						<span className="text-fg-3">
+							<span aria-hidden>—</span>
+							<span className="sr-only">Not analyzed</span>
 						</span>
 					)}
 				</td>
 			)}
 			<td className={cn("border-b border-line", CELL)}>
 				<div className="flex items-center justify-end gap-1">
+					{tier === "full" && <RowCopy mint={t.mint} visible={selected} />}
 					<WatchButton mint={t.mint} />
-					{tier === "narrow" ? (
+					{tier !== "full" ? (
 						<IconButton
 							size="sm"
 							label={`Analyze ${label}`}
+							title={`Analyze ${label} (A)`}
 							onClick={(e) => {
 								e.stopPropagation();
 								onAnalyze(t.mint);
@@ -263,7 +295,7 @@ const Row = memo(function Row({
 							}}
 							className={cn(
 								"transition-opacity",
-								!selected && "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
+								!selected && HOVER_ONLY,
 							)}
 						>
 							Analyze
@@ -332,14 +364,16 @@ export function TokenTableSkeleton({ tier, rows = 14 }: { tier: Tier; rows?: num
 			<tbody>
 				{Array.from({ length: rows }, (_, i) => (
 					<tr key={i} className="h-row">
-						<td className={cn("border-b border-line", CELL)}>
-							<Skeleton className="ml-auto h-3 w-4" />
-						</td>
+						{tier !== "narrow" && (
+							<td className={cn("border-b border-line", CELL)}>
+								<Skeleton className="ml-auto h-3 w-4" />
+							</td>
+						)}
 						<td className={cn("border-b border-line", CELL)}>
 							<div className="flex items-center gap-2.5">
 								<Skeleton className="size-7 shrink-0 rounded-full" />
 								<Skeleton className="h-3 w-14" />
-								<div aria-hidden className="skeleton skeleton-shimmer h-3" style={{ width: 70 + ((i * 37) % 90) }} />
+								<Skeleton className="h-3" style={{ width: 70 + ((i * 37) % 90) }} />
 							</div>
 						</td>
 						<td className={cn("border-b border-line", CELL)}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { extractMint } from "../../../shared/analysis";
 import type { AnalysisStats, LeaderboardEntry } from "../../../shared/types";
 import { bun, errorMessage } from "../../lib/rpc";
@@ -22,6 +22,15 @@ export interface Sort {
 }
 
 export const DEFAULT_SORT: Sort = { key: "rank", dir: "asc" };
+
+export const isDefaultSort = (s: Sort) => s.key === DEFAULT_SORT.key && s.dir === DEFAULT_SORT.dir;
+
+/** Plain-language description of the active sort, for the table footer. */
+export function sortLabel(s: Sort): string {
+	if (s.key === "rank") return s.dir === "asc" ? "Ranked by number of analyses" : "Ranked by analyses, lowest first";
+	if (s.key === "count") return s.dir === "desc" ? "Sorted by analyses, most first" : "Sorted by analyses, fewest first";
+	return s.dir === "desc" ? "Sorted by last score, highest first" : "Sorted by last score, lowest first";
+}
 
 /** First click on a column sorts in its natural direction. */
 export function nextSort(cur: Sort, key: SortKey): Sort {
@@ -94,13 +103,26 @@ export function useAnalysisStats(active: boolean): StatsState {
 	const reqId = useRef(0);
 	const fetchedAtRef = useRef<number>();
 	const started = useRef(false);
+	const inflight = useRef(false);
 
 	const load = useRef(async () => {
 		const id = ++reqId.current;
 		started.current = true;
+		inflight.current = true;
 		setLoading(true);
 		try {
-			const s = await bun.getAnalysisStats(LEADERBOARD_LIMIT);
+			// REVIEW-DEBUG-START
+			const dbg = new URLSearchParams(location.search);
+			if ((window as unknown as { __lbFail?: boolean }).__lbFail || dbg.has("lbfail")) {
+				await new Promise((r) => setTimeout(r, 300));
+				throw new Error("pump.studio did not respond in time (request timed out after 15s).");
+			}
+			if (dbg.has("lbslow")) await new Promise((r) => setTimeout(r, 60_000));
+			// REVIEW-DEBUG-END
+			let s = await bun.getAnalysisStats(LEADERBOARD_LIMIT);
+			// REVIEW-DEBUG-START
+			if (dbg.has("lbempty")) s = { ...s, leaderboard: [], totalAnalyses: 0, uniqueTokens: 0, progress: 0 };
+			// REVIEW-DEBUG-END
 			if (id !== reqId.current) return;
 			setStats(s);
 			setError(undefined);
@@ -114,15 +136,19 @@ export function useAnalysisStats(active: boolean): StatsState {
 			if (id !== reqId.current) return;
 			setError(errorMessage(err));
 		} finally {
-			if (id === reqId.current) setLoading(false);
+			if (id === reqId.current) {
+				inflight.current = false;
+				setLoading(false);
+			}
 		}
 	}).current;
 
-	// First activation, and refetch stale data when coming back to the screen.
+	// First activation. Coming back to the screen refetches when the data went
+	// stale, or when the last attempt failed before any data arrived.
 	useEffect(() => {
-		if (!active) return;
-		if (!started.current) void load();
-		else if (fetchedAtRef.current && Date.now() - fetchedAtRef.current > STALE_MS) void load();
+		if (!active || inflight.current) return;
+		const at = fetchedAtRef.current;
+		if (!started.current || !at || Date.now() - at > STALE_MS) void load();
 	}, [active, load]);
 
 	// Global refresh (Cmd/Ctrl+R, menu) while this screen is visible.
@@ -134,7 +160,8 @@ export function useAnalysisStats(active: boolean): StatsState {
 		if (active) void load();
 	}, [tick, active, load]);
 
-	return { stats, loading, error, fetchedAt, reload: () => void load() };
+	const reload = useCallback(() => void load(), [load]);
+	return { stats, loading, error, fetchedAt, reload };
 }
 
 /** Re-render every `ms` while enabled, for relative timestamps. */

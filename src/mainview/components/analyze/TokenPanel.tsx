@@ -82,13 +82,22 @@ export function TokenPanel({
 						</div>
 					</div>
 				</div>
-				<div className="mt-2 flex flex-wrap items-center gap-1.5">
-					<CopyMint mint={dp.mint} className="-ml-1" />
-					<TokenStatus live={dp.isLive} graduated={dp.bondingComplete} progress={dp.bondingProgress} />
+				<div className="mt-3 flex items-center gap-2">
+					<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+						<CopyMint mint={dp.mint} className="-ml-1" />
+						<TokenStatus live={dp.isLive} graduated={dp.bondingComplete} progress={dp.bondingProgress} />
+					</div>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="-mr-2 shrink-0"
+						icon={<ArrowLeftRight className="size-3.5" />}
+						onClick={onChangeToken}
+						title="Pick another token. Your draft for this one is kept."
+					>
+						Change token
+					</Button>
 				</div>
-				<Button variant="ghost" size="sm" className="-ml-2.5 mt-2" icon={<ArrowLeftRight className="size-3.5" />} onClick={onChangeToken}>
-					Change token
-				</Button>
 			</div>
 
 			{/* Snapshot age */}

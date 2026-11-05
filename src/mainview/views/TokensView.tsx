@@ -100,8 +100,15 @@ export function TokensView({ active }: { active: boolean }) {
 		() => (isWatch ? watchlistTokens(watchlist, market, tokenMeta) : (market[tab as MarketTab]?.tokens ?? EMPTY_TOKENS)),
 		[isWatch, watchlist, market, tokenMeta, tab],
 	);
-	const filtered = useMemo(() => applyFilters(baseTokens, filters, query, analyzed, now), [baseTokens, filters, query, analyzed, now]);
+	const typedMint = useMemo(() => extractMint(query), [query]);
+	const filtered = useMemo(
+		() => applyFilters(baseTokens, filters, query, analyzed, now, typedMint),
+		[baseTokens, filters, query, analyzed, now, typedMint],
+	);
 	const rows = useMemo(() => sortTokens(filtered, sort), [filtered, sort]);
+
+	// Bumped on manual and global refreshes so the inspector reloads its snapshot too.
+	const [reloadSignal, setReloadSignal] = useState(0);
 
 	const load = useCallback(
 		(force: boolean) => {
@@ -126,8 +133,16 @@ export function TokensView({ active }: { active: boolean }) {
 	useEffect(() => {
 		if (refreshTick === lastTick.current) return;
 		lastTick.current = refreshTick;
-		if (active) load(true);
+		if (active) {
+			load(true);
+			setReloadSignal((n) => n + 1);
+		}
 	}, [refreshTick, active, load]);
+
+	const refreshNow = useCallback(() => {
+		load(true);
+		setReloadSignal((n) => n + 1);
+	}, [load]);
 
 	// Auto-refresh only while this screen is shown and the window is visible.
 	useEffect(() => {
@@ -140,7 +155,6 @@ export function TokensView({ active }: { active: boolean }) {
 
 	/* ---- Derived UI state ---------------------------------------------------- */
 
-	const typedMint = useMemo(() => extractMint(query), [query]);
 	const mintOutsideList = !!typedMint && !baseTokens.some((t) => t.mint === typedMint);
 	const filtersOn = filters.size > 0 || query.trim().length > 0;
 	const hidden = baseTokens.length - rows.length;
@@ -338,7 +352,7 @@ export function TokensView({ active }: { active: boolean }) {
 							</span>
 							<Segmented size="sm" label="Auto-refresh" value={auto} options={AUTO_OPTIONS} onChange={(v) => (setAuto(v), saveAutoRefresh(v))} />
 						</div>
-						<IconButton label={`Refresh (${MOD}+R)`} onClick={() => load(true)} aria-busy={loading || undefined}>
+						<IconButton label={`Refresh (${MOD}+R)`} onClick={refreshNow} aria-busy={loading || undefined}>
 							<RotateCw className={cn("size-4", loading && "animate-spin")} aria-hidden />
 						</IconButton>
 					</>
@@ -389,43 +403,44 @@ export function TokensView({ active }: { active: boolean }) {
 
 			<div className="flex min-h-0 flex-1">
 				<div className="flex min-w-0 flex-1 flex-col">
-					<SetupBanner compact className="mx-5 mt-3" />
-					{showStale && (
-						<Banner
-							tone="warn"
-							className="mx-5 mt-3"
-							title="Could not refresh the list"
-							action={
-								<Button size="sm" icon={<RotateCw className="size-3.5" aria-hidden />} onClick={() => load(true)} loading={loading}>
-									Try again
+					<div className="flex shrink-0 flex-col gap-2 px-5 py-3 empty:hidden">
+						<SetupBanner compact />
+						{showStale && (
+							<Banner
+								tone="warn"
+								title="Could not refresh the list"
+								action={
+									<Button size="sm" icon={<RotateCw className="size-3.5" aria-hidden />} onClick={() => load(true)} loading={loading}>
+										Try again
+									</Button>
+								}
+							>
+								{(error ?? "").replace(/\.$/, "")}. {fetchedAt ? `Showing data from ${ago(fetchedAt)}.` : "Showing what is saved on this device."}
+							</Banner>
+						)}
+						{typedMint && mintOutsideList && rows.length > 0 && (
+							<div className="flex items-center gap-3 rounded-lg border border-info/25 bg-info/5 px-3 py-2" role="status">
+								<ScanSearch className="size-4 shrink-0 text-info" aria-hidden />
+								<div className="min-w-0 flex-1 truncate text-base text-fg-2">
+									<span className="font-medium text-fg">
+										{knownMintMeta?.symbol ? `$${knownMintMeta.symbol}` : "This mint"}
+									</span>{" "}
+									<span className="font-mono text-sm text-fg-3" title={typedMint}>
+										{shortMint(typedMint, 6, 6)}
+									</span>{" "}
+									is not in this list.
+								</div>
+								<Button size="sm" variant="ghost" onClick={() => open(typedMint)}>
+									Show details
 								</Button>
-							}
-						>
-							{error}. Showing data from {ago(fetchedAt)}.
-						</Banner>
-					)}
-					{typedMint && mintOutsideList && rows.length > 0 && (
-						<div className="mx-5 mt-3 flex items-center gap-3 rounded-lg border border-info/25 bg-info/5 px-3 py-2" role="status">
-							<ScanSearch className="size-4 shrink-0 text-info" aria-hidden />
-							<div className="min-w-0 flex-1 truncate text-base text-fg-2">
-								<span className="font-medium text-fg">
-									{knownMintMeta?.symbol ? `$${knownMintMeta.symbol}` : "This mint"}
-								</span>{" "}
-								<span className="font-mono text-sm text-fg-3" title={typedMint}>
-									{shortMint(typedMint, 6, 6)}
-								</span>{" "}
-								is not in this list.
+								<Button size="sm" variant="primary" icon={<Zap className="size-3.5" aria-hidden />} onClick={() => openAnalyze(typedMint)}>
+									Analyze {shortMint(typedMint)}
+								</Button>
 							</div>
-							<Button size="sm" variant="ghost" onClick={() => open(typedMint)}>
-								Show details
-							</Button>
-							<Button size="sm" variant="primary" icon={<Zap className="size-3.5" aria-hidden />} onClick={() => openAnalyze(typedMint)}>
-								Analyze {shortMint(typedMint)}
-							</Button>
-						</div>
-					)}
+						)}
+					</div>
 
-					<div ref={scrollRef} className="mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+					<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
 						{body}
 					</div>
 
@@ -480,7 +495,9 @@ export function TokensView({ active }: { active: boolean }) {
 					</div>
 				</div>
 
-				{inspectMint && <TokenInspector mint={inspectMint} token={inspectToken} onClose={() => setInspect(null)} />}
+				{inspectMint && (
+					<TokenInspector mint={inspectMint} token={inspectToken} reloadSignal={reloadSignal} onClose={() => setInspect(null)} />
+				)}
 			</div>
 		</div>
 	);

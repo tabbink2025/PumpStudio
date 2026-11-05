@@ -100,6 +100,8 @@ export function AnalysisForm({
 	const twoCol = width >= 620;
 	const ai = (k: FieldKey) => aiFields.includes(k);
 	const summaryLen = fields.summary.trim().length;
+	const dataSummary = defaults.summary.trim();
+	const hasDataSummary = dataSummary.length > 0 && fields.summary.includes(dataSummary);
 	const summaryHintId = useId();
 	const score = scoreTone(fields.score);
 	const grid = cn("grid gap-x-6 gap-y-5", twoCol ? "grid-cols-2" : "grid-cols-1");
@@ -169,7 +171,7 @@ export function AnalysisForm({
 				id={sectionId(mint, "market")}
 				step={3}
 				title="Market structure"
-				description="Read the trading activity. Values computed from the snapshot are shown as Data says."
+				description="How the token trades. A Data says link appears when your value differs from the snapshot."
 			>
 				<div className={grid}>
 					<ScaleField
@@ -240,7 +242,18 @@ export function AnalysisForm({
 				action={
 					<div className="-my-1 flex items-center gap-2">
 						<AiMarker show={ai("summary")} />
-						<Button variant="ghost" size="sm" icon={<FileText className="size-3.5" />} onClick={onInsertSummary}>
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<FileText className="size-3.5" />}
+							onClick={onInsertSummary}
+							disabled={hasDataSummary}
+							title={
+								hasDataSummary
+									? "The data summary is already in your text"
+									: "Append a summary written from the snapshot numbers"
+							}
+						>
 							Insert data summary
 						</Button>
 					</div>

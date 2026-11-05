@@ -57,7 +57,7 @@ function ToastItem({ t }: { t: Toast }) {
 export function Toaster() {
 	const toasts = useApp((s) => s.toasts);
 	return createPortal(
-		<div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col-reverse gap-2" aria-live="polite">
+		<div className="pointer-events-none fixed bottom-20 right-5 z-[60] flex flex-col-reverse gap-2" aria-live="polite">
 			{[...toasts].reverse().map((t) => (
 				<ToastItem key={t.id} t={t} />
 			))}
@@ -94,7 +94,9 @@ export function Dialog({
 		if (!open) return;
 		restore.current = document.activeElement;
 		const t = setTimeout(() => {
-			const el = panel.current?.querySelector<HTMLElement>("[data-autofocus], input, textarea, button:not([data-close])");
+			const el =
+				panel.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+				panel.current?.querySelector<HTMLElement>("input, textarea, button:not([data-close])");
 			(el ?? panel.current)?.focus();
 		}, 0);
 		const onKey = (e: KeyboardEvent) => {

@@ -5,7 +5,7 @@ import type { DataPoint, MarketToken } from "../../../shared/types";
 import { cn } from "../../lib/cn";
 import { absoluteTime, ago, integer, pct, usdCompact, usdPrice } from "../../lib/format";
 import { bun, errorMessage } from "../../lib/rpc";
-import { useApp } from "../../lib/store";
+import { toast, useApp } from "../../lib/store";
 import {
 	Change,
 	concentrationTone,
@@ -35,7 +35,12 @@ interface DpState {
 	loading: boolean;
 }
 
-function useDataPoint(mint: string) {
+/** Open a link in the system browser; failures become a toast, never a silent rejection. */
+function openLink(open: () => Promise<unknown>) {
+	open().catch((err) => toast({ kind: "error", title: "Could not open the link", description: errorMessage(err) }));
+}
+
+function useDataPoint(mint: string, reloadSignal: number) {
 	const [state, setState] = useState<DpState>(() => {
 		const hit = dpCache.get(mint);
 		return { mint, dp: hit?.dp, loading: !hit };
@@ -71,6 +76,14 @@ function useDataPoint(mint: string) {
 		load();
 	}, [load]);
 
+	// Header refresh (button, Ctrl+R): fetch a fresh snapshot for the open token.
+	const lastSignal = useRef(reloadSignal);
+	useEffect(() => {
+		if (reloadSignal === lastSignal.current) return;
+		lastSignal.current = reloadSignal;
+		load(true);
+	}, [reloadSignal, load]);
+
 	// Never show the previous token's data for a moment after switching.
 	const current = state.mint === mint ? state : { mint, loading: true };
 	return { ...current, reload: () => load(true) };
@@ -99,7 +112,7 @@ function SocialButton({ icon, label, url }: { icon: ReactNode; label: string; ur
 	return (
 		<button
 			type="button"
-			onClick={() => void bun.openExternal(url)}
+			onClick={() => openLink(() => bun.openExternal(url))}
 			title={url}
 			className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-line-strong bg-surface-3 px-2 text-sm text-fg-2 transition-colors hover:border-line-control hover:text-fg"
 		>
@@ -113,8 +126,19 @@ function SocialButton({ icon, label, url }: { icon: ReactNode; label: string; ur
 
 /* ---- Inspector ---------------------------------------------------------- */
 
-export function TokenInspector({ mint, token, onClose }: { mint: string; token?: MarketToken; onClose: () => void }) {
-	const { dp, error, loading, reload } = useDataPoint(mint);
+export function TokenInspector({
+	mint,
+	token,
+	reloadSignal = 0,
+	onClose,
+}: {
+	mint: string;
+	token?: MarketToken;
+	/** Changes when the screen refreshes; the inspector then refetches its snapshot. */
+	reloadSignal?: number;
+	onClose: () => void;
+}) {
+	const { dp, error, loading, reload } = useDataPoint(mint, reloadSignal);
 	const meta = useApp((s) => s.tokenMeta[mint]);
 	const mine = useApp((s) => s.analyzed[mint]);
 	const apiKeySet = useApp((s) => !!s.config?.apiKeySet);
@@ -391,7 +415,7 @@ export function TokenInspector({ mint, token, onClose }: { mint: string; token?:
 				<Button
 					variant="secondary"
 					iconRight={<ExternalLink className="size-3.5 opacity-70" aria-hidden />}
-					onClick={() => void bun.openWebApp(`/datapoint?mint=${mint}`)}
+					onClick={() => openLink(() => bun.openWebApp(`/datapoint?mint=${mint}`))}
 				>
 					Open on pump.studio
 				</Button>

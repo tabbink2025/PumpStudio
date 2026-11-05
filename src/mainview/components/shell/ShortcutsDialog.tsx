@@ -27,6 +27,10 @@ const GROUPS: Array<{ title: string; items: Array<[string, string[]]> }> = [
 		],
 	},
 	{
+		title: "Auto Train",
+		items: [["Start a training run (asks to confirm)", ["S"]]],
+	},
+	{
 		title: "Analyze",
 		items: [
 			["Submit analysis", [MOD, "Enter"]],

@@ -226,16 +226,26 @@ export function ConfirmDialog({
 	busy?: boolean;
 }) {
 	const titleId = useId();
+	// Dialog re-runs its focus effect whenever onClose changes. Callers pass
+	// inline arrows, so keep one stable callback or every re-render (busy
+	// state, a finished connection check) would yank focus back to Cancel.
+	const closeRef = useRef(onClose);
+	closeRef.current = onClose;
+	const busyRef = useRef(busy);
+	busyRef.current = busy;
+	const stableClose = useCallback(() => {
+		if (!busyRef.current) closeRef.current();
+	}, []);
 	return (
 		<Dialog
 			open={open}
-			onClose={onClose}
+			onClose={stableClose}
 			title={title}
 			labelledBy={titleId}
 			width={420}
 			footer={
 				<>
-					<Button variant="ghost" onClick={onClose} data-autofocus>
+					<Button variant="ghost" onClick={stableClose} data-autofocus>
 						Cancel
 					</Button>
 					<Button variant="danger" onClick={onConfirm} loading={busy}>

@@ -40,14 +40,14 @@ function useNow(enabled: boolean, ms = 1000): number {
 
 /* ---- Status pill ---------------------------------------------------------- */
 
-export function StatusPill({ phase }: { phase: RunPhase }) {
+export function StatusPill({ phase, stopped }: { phase: RunPhase; stopped?: boolean }) {
 	const map: Record<RunPhase, { label: string; cls: string; dot: string; pulse?: boolean }> = {
 		running: { label: "Running", cls: "border-brand/30 bg-brand/10 text-brand", dot: "bg-brand", pulse: true },
 		stopping: { label: "Stopping", cls: "border-warn/30 bg-warn/10 text-warn", dot: "bg-warn", pulse: true },
 		finished: { label: "Finished", cls: "border-line-strong bg-surface-3 text-fg-2", dot: "bg-fg-3" },
 		none: { label: "Idle", cls: "border-line-strong bg-surface-3 text-fg-3", dot: "bg-fg-disabled" },
 	};
-	const m = map[phase];
+	const m = phase === "finished" && stopped ? { ...map.finished, label: "Stopped" } : map[phase];
 	return (
 		<span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-medium", m.cls)}>
 			<span aria-hidden className={cn("size-1.5 rounded-full", m.dot, m.pulse && "animate-pulse")} />
@@ -158,7 +158,7 @@ function Pipeline({ item, lastActive }: { item: TrainingItem; lastActive?: Train
 	if (item.step === "skipped") return <Badge tone="neutral">Skipped</Badge>;
 	const states = stagesFor(item, lastActive);
 	const failedStage = states.indexOf("failed");
-	const text = failedStage >= 0 ? `${STAGES[failedStage]!.label} failed` : SHORT_STEP[item.step];
+	const text = SHORT_STEP[item.step];
 	return (
 		<div className="flex min-w-0 items-center gap-1.5">
 			<ol className="flex shrink-0 items-center" aria-label="Pipeline">
@@ -308,6 +308,7 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 							const isCurrent = i === current;
 							const note = noteFor(it);
 							const symbol = it.symbol ? `$${it.symbol}` : shortMint(it.mint);
+							const q = it.step === "queued";
 							return (
 								<tr
 									key={it.mint}
@@ -347,31 +348,31 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 										<Pipeline item={it} lastActive={lastActive.current.map.get(it.mint)} />
 									</td>
 									<td className="px-3">
-										{it.sentiment ? <SentimentBadge value={it.sentiment} score={it.score} /> : <span className="text-fg-disabled">—</span>}
+										{it.sentiment ? <SentimentBadge value={it.sentiment} score={it.score} /> : q ? null : <span className="text-fg-disabled">—</span>}
 									</td>
 									<td className="hidden px-3 xl:table-cell">
-										<Engine it={it} />
+										{q ? null : <Engine it={it} />}
 									</td>
 									<td className="num px-3 text-right">
 										{it.step === "done" && it.xpEarned != null ? (
 											<span className={cn("font-semibold", it.xpEarned > 0 ? "text-brand" : "text-fg-3")}>+{integer(it.xpEarned)}</span>
-										) : (
+										) : q ? null : (
 											<span className="text-fg-disabled">—</span>
 										)}
-									</td>
-									<td className="px-3 text-base">
-										<Validated it={it} />
+										</td>
+										<td className="px-3 text-base">
+										{q ? null : <Validated it={it} />}
 									</td>
 									<td className="hidden pr-4 2xl:table-cell">
 										{note ? (
 											<span className={cn("block truncate text-sm", NOTE_CLS[note.tone])} title={note.text}>
 												{note.text}
 											</span>
-										) : (
+										) : q ? null : (
 											<span className="text-fg-disabled">—</span>
 										)}
-									</td>
-								</tr>
+										</td>
+										</tr>
 							);
 						})}
 					</tbody>
@@ -436,8 +437,14 @@ function Summary({ t, onRetry, onClear, canRetry }: { t: TrainingState; onRetry:
 			action={
 				<div className="flex items-center gap-1.5">
 					{retry > 0 && (
-						<Button size="sm" icon={<RotateCw className="size-3.5" />} onClick={onRetry} disabled={!canRetry} title={canRetry ? undefined : "Add your pump.studio API key first"}>
-							Retry {retry} failed
+						<Button
+							size="sm"
+							icon={<RotateCw className="size-3.5" />}
+							onClick={onRetry}
+							disabled={!canRetry}
+							title={canRetry ? `Start a new run with the ${plural(retry, "token")} that failed or did not run` : "Add your pump.studio API key first"}
+						>
+							{notRun === retry ? `Run remaining ${integer(retry)}` : `Retry failed (${integer(retry)})`}
 						</Button>
 					)}
 					<Button size="sm" variant="ghost" onClick={onClear}>
@@ -490,7 +497,7 @@ export function RunPanel({
 			) : (
 				<>
 					<div className="flex min-w-0 items-center gap-3">
-						<StatusPill phase={phase} />
+						<StatusPill phase={phase} stopped={phase === "finished" && wasStopped(t)} />
 						<span className="min-w-0 flex-1 truncate text-sm text-fg-3" title={meta}>
 							{phase === "running" && currentItem ? (
 								<span className="text-fg-2">

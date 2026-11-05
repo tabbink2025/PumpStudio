@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useState, type ReactNode } from "react";
-import { AlertTriangle, Bot, Check, ChevronRight, RotateCw, Search, SearchX, Star, X } from "lucide-react";
+import { AlertTriangle, Bot, Check, ChevronRight, EyeOff, RotateCw, Search, SearchX, Star, X } from "lucide-react";
 import { shortMint } from "../../../shared/analysis";
 import type { PublicConfig } from "../../../shared/types";
 import { cn } from "../../lib/cn";
@@ -74,7 +74,7 @@ const TokenRow = memo(function TokenRow({
 
 function ListSkeleton() {
 	return (
-		<div className="space-y-px px-2" aria-busy="true" aria-label="Loading tokens">
+		<div role="status" className="space-y-px px-2" aria-busy="true" aria-label="Loading tokens">
 			{Array.from({ length: 9 }, (_, i) => (
 				<div key={i} className="flex h-9 items-center gap-2.5 px-2">
 					<Skeleton className="size-4 rounded" />
@@ -418,14 +418,6 @@ export function SetupPanel(p: SetupPanelProps) {
 					<div className="flex h-6 items-center gap-3 text-sm">
 						<span className="num min-w-0 flex-1 truncate text-fg-2" aria-live="polite">
 							<span className="font-medium text-fg">{integer(p.selected.size)}</span> selected
-							{p.hiddenSelected > 0 && (
-								<>
-									<span className="text-fg-3"> · {integer(p.hiddenSelected)} not in this list </span>
-									<button type="button" onClick={p.onRemoveHidden} className="rounded font-medium text-info hover:underline">
-										Remove
-									</button>
-								</>
-							)}
 						</span>
 						<LinkButton onClick={p.onSelectAll} disabled={p.visible.length === 0 || allVisibleSelected}>
 							Select all
@@ -434,6 +426,17 @@ export function SetupPanel(p: SetupPanelProps) {
 							None
 						</LinkButton>
 					</div>
+					{p.hiddenSelected > 0 && (
+						<div className="flex items-center gap-2 rounded-md border border-info/25 bg-info/5 px-2.5 py-1.5 text-sm">
+							<EyeOff className="size-3.5 shrink-0 text-info" aria-hidden />
+							<span className="num min-w-0 flex-1 text-fg-2">
+								{p.hiddenSelected === 1 ? "1 selected token is" : `${integer(p.hiddenSelected)} selected tokens are`} not in this list
+							</span>
+							<button type="button" onClick={p.onRemoveHidden} className="shrink-0 rounded font-medium text-info hover:underline">
+								Remove
+							</button>
+						</div>
+					)}
 				</div>
 				{p.error && p.sourceCount > 0 && (
 					<p role="alert" className="mx-4 mb-2 flex items-center gap-1.5 text-sm text-neg">
@@ -446,7 +449,7 @@ export function SetupPanel(p: SetupPanelProps) {
 						</button>
 					</p>
 				)}
-				<div className="min-h-[216px] flex-1 basis-0 overflow-y-auto border-y border-line bg-bg/40 py-1">{list}</div>
+				<div className="min-h-[216px] flex-1 basis-0 overflow-y-auto border-y border-line bg-bg/40 py-1 [&>div:not([role])]:py-6">{list}</div>
 
 				{/* Settings */}
 				<div className="px-4 py-3">

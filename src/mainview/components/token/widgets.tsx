@@ -4,7 +4,7 @@ import { shortMint } from "../../../shared/analysis";
 import type { RiskLevel, Sentiment } from "../../../shared/types";
 import { cn } from "../../lib/cn";
 import { pctSigned, titleCase } from "../../lib/format";
-import { bun } from "../../lib/rpc";
+import { bun, errorMessage } from "../../lib/rpc";
 import { toast, useApp } from "../../lib/store";
 import { Badge, type Tone } from "../ui/primitives";
 
@@ -135,7 +135,7 @@ export function WatchButton({ mint, className }: { mint: string; className?: str
 			type="button"
 			aria-pressed={watching}
 			aria-label={watching ? "Remove from watchlist" : "Add to watchlist"}
-			title={watching ? "Remove from watchlist (W)" : "Add to watchlist (W)"}
+			title={watching ? "Remove from watchlist" : "Add to watchlist"}
 			onClick={(e) => {
 				e.stopPropagation();
 				toggle(mint);
@@ -287,7 +287,11 @@ export function ExternalLinks({ mint, className }: { mint: string; className?: s
 				<button
 					key={l.id}
 					type="button"
-					onClick={() => void bun.openExternal(l.url(mint))}
+					onClick={() =>
+						bun.openExternal(l.url(mint)).catch((err) =>
+							toast({ kind: "error", title: `Could not open ${l.label}`, description: errorMessage(err) }),
+						)
+					}
 					className="inline-flex h-7 items-center gap-1 rounded-md border border-line-strong bg-surface-3 px-2 text-sm text-fg-2 transition-colors hover:border-line-control hover:text-fg"
 				>
 					{l.label}

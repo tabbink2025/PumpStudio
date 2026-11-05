@@ -20,7 +20,7 @@ export function UpdatedAgo({ at, loading, active }: { at?: number; loading: bool
 	const now = useNow(5000, active);
 	const text = loading && !at ? "Loading" : loading ? "Updating" : at ? `Updated ${ago(at, Math.max(now, at))}` : "Not loaded yet";
 	return (
-		<span className="num hidden whitespace-nowrap text-sm text-fg-3 lg:inline" title={at ? absoluteTime(at) : undefined} aria-live="polite">
+		<span className="num hidden whitespace-nowrap text-sm text-fg-3 lg:inline" title={at ? absoluteTime(at) : undefined}>
 			{text}
 		</span>
 	);
@@ -88,10 +88,12 @@ export const FilterInput = forwardRef<
 				placeholder="Filter by name, ticker or mint"
 				onChange={(e) => onChange(e.target.value)}
 				onKeyDown={(e) => {
-					if (e.key === "Escape" && value) {
+					if (e.key === "Escape") {
 						e.preventDefault();
 						e.stopPropagation();
-						onChange("");
+						// First Escape clears, the next one hands the keyboard back to the list.
+						if (value) onChange("");
+						else e.currentTarget.blur();
 					}
 					if (e.key === "Enter" && onEnter) {
 						e.preventDefault();
