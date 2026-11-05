@@ -5,7 +5,12 @@ export function isTypingTarget(e: KeyboardEvent): boolean {
 	const el = e.target as HTMLElement | null;
 	if (!el) return false;
 	const tag = el.tagName;
-	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+	if (tag === "INPUT") {
+		// Checkboxes, radios, ranges and buttons do not take text: shortcuts stay on.
+		const type = (el as HTMLInputElement).type;
+		return !["checkbox", "radio", "range", "button", "submit", "reset", "color", "file"].includes(type);
+	}
+	return tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
 
 /** Any open modal/palette blocks screen-level shortcuts. */

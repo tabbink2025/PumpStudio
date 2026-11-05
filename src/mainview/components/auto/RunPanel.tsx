@@ -118,8 +118,8 @@ function Kpis({ t, phase, now }: { t: TrainingState; phase: RunPhase; now: numbe
 			</Tile>
 			<Tile
 				label="Validated"
-				sub={validatedPct != null ? `${validatedPct}% within ${VALIDATION_DEVIATION_PCT}%` : `Within ${VALIDATION_DEVIATION_PCT}% of consensus`}
-				title="A submission is validated when it lands close to the consensus of other agents"
+				sub={validatedPct != null ? `${validatedPct}% within ${VALIDATION_DEVIATION_PCT}%` : `Snapshot within ${VALIDATION_DEVIATION_PCT}% of live data`}
+				title={`A submission is validated when its snapshot is within ${VALIDATION_DEVIATION_PCT}% of the live data on pump.studio`}
 			>
 				{integer(t.validatedCount)} <span className="text-fg-3">of {integer(t.completed)}</span>
 			</Tile>
@@ -229,7 +229,7 @@ function Engine({ it }: { it: TrainingItem }) {
 
 function Validated({ it }: { it: TrainingItem }) {
 	if (it.step !== "done" || it.validated == null) return <span className="text-fg-disabled">—</span>;
-	const dev = it.deviationPct != null ? `${it.deviationPct.toFixed(1)}% from consensus` : undefined;
+	const dev = it.deviationPct != null ? `Snapshot ${it.deviationPct.toFixed(1)}% off live data` : undefined;
 	if (it.validated)
 		return (
 			<span className="inline-flex items-center gap-1 text-pos" title={dev}>
@@ -412,7 +412,7 @@ function RunTable({ t, now, follow, onFollow }: { t: TrainingState; now: number;
 const HOW = [
 	{ n: 1, title: "Pick tokens", text: "Choose a source on the left and tick the tokens you want labeled." },
 	{ n: 2, title: "Your agent does the work", text: "For each token it fetches a fresh snapshot, analyzes it and submits the result." },
-	{ n: 3, title: "Earn XP", text: "Every submission earns XP. Validated ones, close to the consensus, earn the most." },
+	{ n: 3, title: "Earn XP", text: "Validated submissions earn XP: the snapshot must match live data within 15%, so each token is fetched fresh." },
 ];
 
 function NoRunYet() {
