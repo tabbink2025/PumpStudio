@@ -10,7 +10,20 @@ env:
   ELECTROBUN_VERSION: "1.13.1"
 
 jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run typecheck
+      - run: bun test tests
+      - run: bunx vite build
+
   build-macos:
+    needs: check
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +38,11 @@ jobs:
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-core-darwin-arm64.tar.gz" | tar -xz -C "$EB_DIR"
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-cli-darwin-arm64.tar.gz" | tar -xz -C "$EB_DIR"
 
-      - run: bun run build:prod
+      - run: bun run build:stable
 
       - name: Package macOS artifact
         run: |
-          cd build/dev-macos-arm64
+          cd build/stable-macos-arm64
           tar -czf "../../PumpStudioTrainer-macos-arm64.tar.gz" .
       - uses: actions/upload-artifact@v4
         with:
@@ -37,6 +50,7 @@ jobs:
           path: PumpStudioTrainer-macos-arm64.tar.gz
 
   build-windows:
+    needs: check
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,18 +66,19 @@ jobs:
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-core-win-x64.tar.gz" | tar -xz -C "$EB_DIR"
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-cli-win-x64.tar.gz" | tar -xz -C "$EB_DIR"
 
-      - run: bun run build:prod
+      - run: bun run build:stable
 
       - name: Package Windows artifact
         shell: pwsh
         run: |
-          Compress-Archive -Path build\dev-win-x64\* -DestinationPath PumpStudioTrainer-windows-x64.zip
+          Compress-Archive -Path build\stable-win-x64\* -DestinationPath PumpStudioTrainer-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: PumpStudioTrainer-windows-x64
           path: PumpStudioTrainer-windows-x64.zip
 
   build-linux:
+    needs: check
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -79,11 +94,11 @@ jobs:
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-core-linux-x64.tar.gz" | tar -xz -C "$EB_DIR"
           curl -fSL "https://github.com/blackboardsh/electrobun/releases/download/v${ELECTROBUN_VERSION}/electrobun-cli-linux-x64.tar.gz" | tar -xz -C "$EB_DIR"
 
-      - run: bun run build:prod
+      - run: bun run build:stable
 
       - name: Package Linux artifact
         run: |
-          cd build/dev-linux-x64
+          cd build/stable-linux-x64
           tar -czf "../../PumpStudioTrainer-linux-x64.tar.gz" .
       - uses: actions/upload-artifact@v4
         with:

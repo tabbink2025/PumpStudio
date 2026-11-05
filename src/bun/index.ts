@@ -42,7 +42,10 @@ const rpc = BrowserView.defineRPC<PumpStudioRPC>({
 	maxRequestTime: 10_000,
 	handlers: {
 		requests: {
-			getMarket: ({ tab, limit }) => api.getMarket(tab, Math.min(Math.max(limit ?? 50, 1), 100)),
+			getMarket: ({ tab, limit }) => {
+				const safeTab = (["all", "live", "new", "graduated"] as const).find((t) => t === tab) ?? "all";
+				return api.getMarket(safeTab, Math.min(Math.max(Number(limit) || 50, 1), 100));
+			},
 			getDataPoint: ({ mint }) => {
 				const m = extractMint(mint);
 				if (!m) throw new Error("That does not look like a Solana mint address");

@@ -4,6 +4,5 @@ build/
 artifacts/
 .DS_Store
 *.log
-bun.lock
 .env
 .env.local
