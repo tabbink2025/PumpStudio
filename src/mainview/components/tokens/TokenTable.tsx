@@ -21,7 +21,8 @@ export function useTier(ref: RefObject<HTMLElement>): Tier {
 		if (!el) return;
 		const measure = () => {
 			const w = el.clientWidth;
-			setTier(w >= 800 ? "full" : w >= 620 ? "mid" : "narrow");
+			// "full" needs ~650px of fixed columns plus room for the token name.
+			setTier(w >= 1000 ? "full" : w >= 620 ? "mid" : "narrow");
 		};
 		measure();
 		const ro = new ResizeObserver(measure);
