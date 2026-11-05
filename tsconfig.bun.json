@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ESNext", "DOM"],
+		"types": ["bun"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"noUnusedLocals": true,
+		"noFallthroughCasesInSwitch": true
+	},
+	"include": ["electrobun.config.ts", "src/bun", "src/shared"]
+}

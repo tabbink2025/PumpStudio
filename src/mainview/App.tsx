@@ -1,64 +1,210 @@
-import { useState, useEffect } from "react";
-import { Sidebar } from "./components/Sidebar";
-import { TokenBrowser } from "./components/TokenBrowser";
-import { AnalysisWizard } from "./components/AnalysisWizard";
-import { Leaderboard } from "./components/Leaderboard";
-import { Settings } from "./components/Settings";
-import { AutoTrainer } from "./components/AutoTrainer";
-import { request, on } from "./lib/rpc";
-import type { AgentConfig } from "../shared/types";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle } from "lucide-react";
+import type { ViewId } from "../shared/rpc-schema";
+import { CommandPalette } from "./components/shell/CommandPalette";
+import { ShortcutsDialog } from "./components/shell/ShortcutsDialog";
+import { Sidebar } from "./components/shell/Sidebar";
+import { Button } from "./components/ui/Button";
+import { Toaster } from "./components/ui/overlays";
+import { isModKey, isTypingTarget, overlayOpen } from "./lib/hotkeys";
+import { bun, isDemo, on } from "./lib/rpc";
+import { useApp } from "./lib/store";
+import { AnalyzeView } from "./views/AnalyzeView";
+import { AutoTrainView } from "./views/AutoTrainView";
+import { LeaderboardView } from "./views/LeaderboardView";
+import { SettingsView } from "./views/SettingsView";
+import { TokensView } from "./views/TokensView";
 
-export type View = "browse" | "analyze" | "auto" | "leaderboard" | "settings";
+const VIEWS: Array<{ id: ViewId; render: (active: boolean) => ReactNode }> = [
+	{ id: "tokens", render: (a) => <TokensView active={a} /> },
+	{ id: "analyze", render: (a) => <AnalyzeView active={a} /> },
+	{ id: "auto", render: (a) => <AutoTrainView active={a} /> },
+	{ id: "leaderboard", render: (a) => <LeaderboardView active={a} /> },
+	{ id: "settings", render: (a) => <SettingsView active={a} /> },
+];
+
+const NUM_TO_VIEW: Record<string, ViewId> = { "1": "tokens", "2": "analyze", "3": "auto", "4": "leaderboard", "5": "settings" };
+const G_TO_VIEW: Record<string, ViewId> = { t: "tokens", a: "analyze", r: "auto", l: "leaderboard", s: "settings" };
+
+/* ---- Theme + density ------------------------------------------------- */
+
+function useAppearance() {
+	const theme = useApp((s) => s.config?.prefs.theme ?? "system");
+	const density = useApp((s) => s.config?.prefs.density ?? "comfortable");
+	useEffect(() => {
+		const root = document.documentElement;
+		const mq = window.matchMedia("(prefers-color-scheme: light)");
+		const apply = () => {
+			root.dataset.theme = theme === "system" ? (mq.matches ? "light" : "dark") : theme;
+		};
+		apply();
+		if (theme !== "system") return;
+		mq.addEventListener("change", apply);
+		return () => mq.removeEventListener("change", apply);
+	}, [theme]);
+	useEffect(() => {
+		document.documentElement.dataset.density = density;
+	}, [density]);
+}
+
+/* ---- Bridge to the Bun process --------------------------------------- */
+
+function useBridge() {
+	useEffect(() => {
+		const s = useApp.getState();
+		void s.loadConfig();
+		bun.getTrainingState().then(s.setTraining, () => {});
+		bun.getXp().then(s.setXp, () => {});
+		const offs = [
+			on("trainingState", (t) => useApp.getState().setTraining(t)),
+			on("xp", (x) => useApp.getState().setXp(x)),
+			on("command", (cmd) => {
+				const st = useApp.getState();
+				if (cmd.type === "navigate") st.setView(cmd.view);
+				if (cmd.type === "openPalette") st.setPalette(true);
+				if (cmd.type === "refresh") st.refresh();
+				if (cmd.type === "toggleSidebar") st.setPrefs({ sidebarCollapsed: !st.config?.prefs.sidebarCollapsed });
+			}),
+		];
+		bun.viewReady();
+		return () => offs.forEach((off) => off());
+	}, []);
+}
+
+/* ---- Global shortcuts -------------------------------------------------- */
+
+function useGlobalKeys() {
+	const gPending = useRef<number>(0);
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const st = useApp.getState();
+			const k = e.key.toLowerCase();
+			if (isModKey(e) && k === "k") {
+				e.preventDefault();
+				st.setPalette(!st.paletteOpen);
+				return;
+			}
+			if (isModKey(e) && !e.shiftKey && NUM_TO_VIEW[e.key]) {
+				e.preventDefault();
+				st.setView(NUM_TO_VIEW[e.key]!);
+				return;
+			}
+			if (isModKey(e) && k === ",") {
+				e.preventDefault();
+				st.setView("settings");
+				return;
+			}
+			if (isModKey(e) && k === "b") {
+				e.preventDefault();
+				st.setPrefs({ sidebarCollapsed: !st.config?.prefs.sidebarCollapsed });
+				return;
+			}
+			if (isModKey(e) && !e.shiftKey && k === "r") {
+				e.preventDefault();
+				st.refresh();
+				return;
+			}
+			if (isTypingTarget(e) || overlayOpen() || e.metaKey || e.ctrlKey || e.altKey) return;
+			if (e.key === "/") {
+				e.preventDefault();
+				st.setPalette(true);
+			} else if (e.key === "?") {
+				e.preventDefault();
+				st.setShortcuts(true);
+			} else if (k === "g") {
+				gPending.current = Date.now();
+			} else if (gPending.current && Date.now() - gPending.current < 1200 && G_TO_VIEW[k]) {
+				e.preventDefault();
+				gPending.current = 0;
+				st.setView(G_TO_VIEW[k]!);
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+}
+
+/* ---- Error boundary ---------------------------------------------------- */
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+	state = { error: null as Error | null };
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
+	componentDidCatch(error: Error) {
+		console.error("[ui] crashed:", error);
+	}
+	render() {
+		if (!this.state.error) return this.props.children;
+		return (
+			<div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+				<AlertTriangle className="size-8 text-warn" />
+				<div>
+					<h1 className="text-lg font-semibold text-fg">This screen hit an error</h1>
+					<p className="mt-1 max-w-md text-base text-fg-3">{this.state.error.message}</p>
+				</div>
+				<Button variant="primary" onClick={() => this.setState({ error: null })}>
+					Try again
+				</Button>
+			</div>
+		);
+	}
+}
+
+/* ---- App ----------------------------------------------------------------- */
 
 export default function App() {
-	const [view, setView] = useState<View>("browse");
-	const [selectedMint, setSelectedMint] = useState<string | null>(null);
-	const [config, setConfig] = useState<AgentConfig | null>(null);
-	const [xpTotal, setXpTotal] = useState(0);
-
+	const view = useApp((s) => s.view);
+	const configLoaded = useApp((s) => !!s.config);
+	const configError = useApp((s) => s.configError);
+	// Mount a screen the first time it is visited, then keep it alive so
+	// drafts, filters and scroll positions survive navigation.
+	const [visited, setVisited] = useState<Set<ViewId>>(() => new Set([view]));
 	useEffect(() => {
-		request<{ config: AgentConfig }>("loadConfig").then((r) => setConfig(r.config)).catch(() => {});
-		const unsub = on("configResult", (p: unknown) => setConfig((p as { config: AgentConfig }).config));
-		return unsub;
-	}, []);
+		setVisited((v) => (v.has(view) ? v : new Set(v).add(view)));
+	}, [view]);
 
-	const handleSelect = (mint: string) => {
-		setSelectedMint(mint);
-		setView("analyze");
-	};
+	useAppearance();
+	useBridge();
+	useGlobalKeys();
 
-	const handleXp = (xp: number) => setXpTotal((p) => p + xp);
+	if (!configLoaded && configError) {
+		return (
+			<div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+				<AlertTriangle className="size-8 text-warn" />
+				<h1 className="text-lg font-semibold text-fg">Could not start Pump.studio</h1>
+				<p className="max-w-md text-base text-fg-3">{configError}</p>
+				<Button onClick={() => void useApp.getState().loadConfig()}>Retry</Button>
+			</div>
+		);
+	}
 
 	return (
-		<div className="h-screen flex flex-col mesh-bg overflow-hidden">
-			{/* Frameless window drag bar */}
-			<div className="drag-region h-8 flex-shrink-0 flex items-center px-20">
-				<span className="text-[10px] text-white/20 font-medium tracking-wider">PUMP.STUDIO</span>
-			</div>
-
-			<div className="flex flex-1 overflow-hidden">
-			<Sidebar
-				view={view}
-				onNavigate={setView}
-				xpTotal={xpTotal}
-				connected={!!config?.apiKey}
-			/>
-
-			<main className="flex-1 overflow-hidden animate-fade-in">
-				{view === "browse" && <TokenBrowser onSelect={handleSelect} />}
-				{view === "analyze" && (
-					<AnalysisWizard
-						mint={selectedMint}
-						onBack={() => setView("browse")}
-						onXpEarned={handleXp}
-						orchestrator={config?.orchestrator ?? "manual"}
-					/>
+		<div className="flex h-full bg-bg text-fg">
+			<Sidebar />
+			<main className="relative flex min-w-0 flex-1 flex-col">
+				{isDemo && (
+					<div className="shrink-0 border-b border-warn/25 bg-warn/5 px-5 py-1.5 text-sm text-warn">
+						Demo mode: generated sample data, nothing is sent to pump.studio. Run the desktop app to use your real account.
+					</div>
 				)}
-				{view === "auto" && <AutoTrainer config={config} onXpEarned={handleXp} />}
-				{view === "leaderboard" && <Leaderboard />}
-				{view === "settings" && <Settings config={config} onSave={setConfig} />}
+				<ErrorBoundary>
+					{VIEWS.map(({ id, render }) =>
+						visited.has(id) ? (
+							<section
+								key={id}
+								aria-hidden={view !== id}
+								className={view === id ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+							>
+								{render(view === id)}
+							</section>
+						) : null,
+					)}
+				</ErrorBoundary>
 			</main>
-			</div>
+			<CommandPalette />
+			<ShortcutsDialog />
+			<Toaster />
 		</div>
 	);
 }

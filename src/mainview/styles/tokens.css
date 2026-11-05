@@ -1,0 +1,91 @@
+/* ------------------------------------------------------------------ */
+/*  Design tokens                                                       */
+/*                                                                      */
+/*  Values are space-separated RGB channels so Tailwind can apply       */
+/*  alpha: bg-surface-2/50. Contrast ratios (WCAG 2.x) are measured on  */
+/*  --bg unless noted. Every text token passes AA (4.5:1).              */
+/* ------------------------------------------------------------------ */
+
+:root,
+:root[data-theme="dark"] {
+	color-scheme: dark;
+
+	/* Surfaces: elevation by opaque steps, no blur */
+	--bg: 11 12 15; /* #0b0c0f canvas */
+	--surface-1: 17 19 23; /* #111317 sidebar, toolbar */
+	--surface-2: 22 24 29; /* #16181d panels, cards */
+	--surface-3: 29 32 38; /* #1d2026 hover, inputs, selected */
+	--surface-4: 38 42 50; /* #262a32 pressed, segmented thumb */
+
+	/* Borders */
+	--border-subtle: 38 42 49; /* #262a31 decorative dividers */
+	--border-strong: 53 58 67; /* #353a43 cards, popovers */
+	--border-control: 95 102 114; /* #5f6672 input outlines, 3.4:1 */
+
+	/* Text */
+	--text-primary: 232 234 238; /* #e8eaee 16.2:1 */
+	--text-secondary: 161 167 179; /* #a1a7b3 8.1:1 */
+	--text-tertiary: 138 145 156; /* #8a919c 6.2:1 labels, meta */
+	--text-disabled: 95 102 114; /* #5f6672 disabled only */
+
+	/* Brand: primary actions and selection */
+	--brand: 34 197 94; /* #22c55e */
+	--brand-hover: 52 210 107; /* #34d26b */
+	--brand-fg: 6 20 11; /* text on brand, 9.9:1 */
+	--brand-soft: 34 197 94;
+
+	/* Semantic */
+	--pos: 47 210 122; /* #2fd27a 9.9:1 */
+	--neg: 255 92 99; /* #ff5c63 6.5:1 */
+	--warn: 245 184 61; /* #f5b83d 11:1 */
+	--orange: 255 138 61; /* #ff8a3d high risk */
+	--info: 91 157 255; /* #5b9dff 7.2:1 */
+	--violet: 167 139 250; /* #a78bfa AI */
+	--focus: 91 157 255;
+
+	--shadow-alpha: 0.45;
+}
+
+:root[data-theme="light"] {
+	color-scheme: light;
+
+	--bg: 255 255 255;
+	--surface-1: 247 248 250;
+	--surface-2: 255 255 255;
+	--surface-3: 240 242 245;
+	--surface-4: 228 231 236;
+
+	--border-subtle: 227 230 235;
+	--border-strong: 207 212 219;
+	--border-control: 138 146 158;
+
+	--text-primary: 17 19 24; /* 18.6:1 */
+	--text-secondary: 75 82 96; /* 7.9:1 */
+	--text-tertiary: 95 102 115; /* 5.8:1 */
+	--text-disabled: 160 166 176;
+
+	--brand: 22 163 74; /* #16a34a for fills */
+	--brand-hover: 21 128 61;
+	--brand-fg: 255 255 255;
+	--brand-soft: 22 163 74;
+
+	--pos: 18 114 56; /* 6.0:1 */
+	--neg: 180 35 24; /* 6.6:1 */
+	--warn: 152 86 0; /* 5.7:1 */
+	--orange: 181 71 8;
+	--info: 26 86 196;
+	--violet: 109 40 217;
+	--focus: 26 86 196;
+
+	--shadow-alpha: 0.12;
+}
+
+/* Density */
+:root {
+	--row-h: 44px;
+	--cell-px: 12px;
+}
+:root[data-density="compact"] {
+	--row-h: 34px;
+	--cell-px: 10px;
+}

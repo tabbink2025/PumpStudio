@@ -1,27 +1,22 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pump.Studio</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <div id="root">
-      <div id="loading" style="display:flex;align-items:center;justify-content:center;height:100vh;background:#050508;color:#22c55e;font-family:monospace;font-size:16px">
-        Loading Pump.Studio...
-      </div>
-    </div>
-    <script type="module" src="/main.tsx"></script>
-    <script>
-      window.onerror = function(msg, url, line, col, err) {
-        document.getElementById('loading').innerHTML =
-          '<div style="padding:40px;color:#ef4444;font-size:12px;white-space:pre-wrap;max-width:800px">' +
-          'JS ERROR:\\n' + msg + '\\n' + url + ':' + line + ':' + col +
-          (err && err.stack ? '\\n\\nStack:\\n' + err.stack : '') + '</div>';
-      };
-    </script>
-  </body>
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="color-scheme" content="dark light" />
+		<title>Pump.studio</title>
+		<style>
+			html { background: #0b0c0f; }
+			@media (prefers-color-scheme: light) { html { background: #ffffff; } }
+			#boot { display: flex; align-items: center; justify-content: center; height: 100vh; gap: 10px;
+				font: 500 13px system-ui, sans-serif; color: #8a919c; }
+			#boot img { width: 24px; height: 24px; border-radius: 6px; }
+		</style>
+	</head>
+	<body>
+		<div id="root">
+			<div id="boot"><img src="./assets/pill2.png" alt="" />Starting Pump.studio…</div>
+		</div>
+		<script type="module" src="./main.tsx"></script>
+	</body>
 </html>
