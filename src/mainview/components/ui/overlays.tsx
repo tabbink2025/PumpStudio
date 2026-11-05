@@ -89,6 +89,9 @@ export function Dialog({
 }) {
 	const panel = useRef<HTMLDivElement>(null);
 	const restore = useRef<Element | null>(null);
+	// Keep the latest onClose without re-running the focus effect (callers often pass inline arrows).
+	const closeRef = useRef(onClose);
+	closeRef.current = onClose;
 
 	useEffect(() => {
 		if (!open) return;
@@ -102,7 +105,7 @@ export function Dialog({
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				e.stopPropagation();
-				onClose();
+				closeRef.current();
 			}
 			if (e.key === "Tab" && panel.current) {
 				const f = panel.current.querySelectorAll<HTMLElement>(
@@ -126,11 +129,14 @@ export function Dialog({
 			window.removeEventListener("keydown", onKey, true);
 			(restore.current as HTMLElement | null)?.focus?.();
 		};
-	}, [open, onClose]);
+	}, [open]);
 
 	if (!open) return null;
 	return createPortal(
-		<div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-4 pt-[12vh] animate-fade-in" onMouseDown={onClose}>
+		<div
+			className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-4 pt-[12vh] animate-fade-in"
+			onMouseDown={() => closeRef.current()}
+		>
 			<div
 				ref={panel}
 				role="dialog"

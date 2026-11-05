@@ -156,6 +156,9 @@ export function AutoTrainView({ active }: { active: boolean }) {
 		try {
 			const state = await bun.startAutoTraining({ targets: confirm.targets.map(toTarget) });
 			setTraining(state);
+			// The batch is in the run table now; free the picker for the next batch.
+			// A retry starts from the last run, so it leaves the current selection alone.
+			if (!confirm.retry) setSelected(new Map());
 			setConfirm(null);
 		} catch (err) {
 			setStartError(errorMessage(err));
@@ -238,6 +241,7 @@ export function AutoTrainView({ active }: { active: boolean }) {
 					onRetry={retry}
 					canRetry={!!config?.apiKeySet && !running}
 					engineLabel={training.orchestrator === config?.orchestrator ? engine.label : training.orchestrator === "manual" ? "Rules" : training.orchestrator === "claude" ? "Claude" : "OpenAI"}
+					liveIntervalSec={config?.analyzeInterval}
 				/>
 			</div>
 			<StartDialog

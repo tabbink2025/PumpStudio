@@ -8,11 +8,14 @@ import { useApp } from "../../lib/store";
 import { SetupBanner } from "../shell/chrome";
 import { Meter, SentimentBadge, TokenAvatar } from "../token/widgets";
 import { Button } from "../ui/Button";
-import { Badge, Banner, EmptyState } from "../ui/primitives";
+import { Badge, Banner } from "../ui/primitives";
 import {
 	about,
+	ACTIVE_STEPS,
 	currentIndex,
+	isNotRun,
 	isTerminal,
+	notRunCount,
 	perTokenSec,
 	phaseOf,
 	processedCount,
@@ -20,6 +23,7 @@ import {
 	STAGES,
 	stagesFor,
 	STEP_LABEL,
+	upNextIndex,
 	wasStopped,
 	type RunPhase,
 	type StageState,
@@ -70,9 +74,13 @@ function Tile({ label, children, sub, title }: { label: string; children: ReactN
 
 function Kpis({ t, phase, now }: { t: TrainingState; phase: RunPhase; now: number }) {
 	const processed = processedCount(t);
+	const notRun = notRunCount(t);
 	const pctDone = t.total > 0 ? (processed / t.total) * 100 : 0;
 	const validatedPct = t.completed > 0 ? Math.round((t.validatedCount / t.completed) * 100) : null;
-	const remaining = Math.max(0, t.total - processed);
+	const remaining = Math.max(0, t.total - processed - notRun);
+	const skippedOther = Math.max(0, t.skipped - notRun);
+	const failedSub = [`${integer(skippedOther)} skipped`];
+	if (notRun > 0) failedSub.push(`${integer(notRun)} not run`);
 	const ai = t.orchestrator !== "manual";
 
 	let nextLabel = "Next token";
@@ -110,12 +118,12 @@ function Kpis({ t, phase, now }: { t: TrainingState; phase: RunPhase; now: numbe
 			</Tile>
 			<Tile
 				label="Validated"
-				sub={validatedPct != null ? `${validatedPct}% within ${VALIDATION_DEVIATION_PCT}%` : "Within 15% of consensus"}
+				sub={validatedPct != null ? `${validatedPct}% within ${VALIDATION_DEVIATION_PCT}%` : `Within ${VALIDATION_DEVIATION_PCT}% of consensus`}
 				title="A submission is validated when it lands close to the consensus of other agents"
 			>
 				{integer(t.validatedCount)} <span className="text-fg-3">of {integer(t.completed)}</span>
 			</Tile>
-			<Tile label="Failed" sub={t.skipped > 0 ? `${integer(t.skipped)} skipped` : "0 skipped"}>
+			<Tile label="Failed" sub={failedSub.join(" · ")} title={notRun > 0 ? "Not run: still queued when the run stopped" : undefined}>
 				<span className={cn("inline-flex items-center gap-1", t.failed > 0 ? "text-neg" : "text-fg")}>
 					{t.failed > 0 && <X className="size-4" aria-hidden />}
 					{integer(t.failed)}
@@ -155,13 +163,20 @@ function StageIcon({ state }: { state: StageState }) {
 }
 
 function Pipeline({ item, lastActive }: { item: TrainingItem; lastActive?: TrainingStep }) {
-	if (item.step === "skipped") return <Badge tone="neutral">Skipped</Badge>;
+	if (item.step === "skipped")
+		return isNotRun(item) ? (
+			<span className="text-sm text-fg-3" title="Still queued when the run stopped">
+				Not run
+			</span>
+		) : (
+			<Badge tone="neutral" title={item.error}>
+				Skipped
+			</Badge>
+		);
 	const states = stagesFor(item, lastActive);
-	const failedStage = states.indexOf("failed");
-	const text = SHORT_STEP[item.step];
 	return (
-		<div className="flex min-w-0 items-center gap-1.5">
-			<ol className="flex shrink-0 items-center" aria-label="Pipeline">
+		<div className="flex min-w-0 items-center">
+			<ol className="flex shrink-0 items-center" aria-label={`Pipeline: ${SHORT_STEP[item.step]}`}>
 				{STAGES.map((s, i) => (
 					<li key={s.id} className="flex items-center">
 						{i > 0 && <ChevronRight className="mx-px size-3 text-fg-disabled" aria-hidden />}
@@ -179,15 +194,6 @@ function Pipeline({ item, lastActive }: { item: TrainingItem; lastActive?: Train
 					</li>
 				))}
 			</ol>
-			<span
-				className={cn(
-					"hidden truncate text-sm xl:inline 2xl:hidden",
-					failedStage >= 0 ? "text-neg" : item.step === "done" ? "text-fg-3" : item.step === "queued" ? "text-fg-3" : "text-fg-2",
-				)}
-				aria-hidden
-			>
-				{text}
-			</span>
 		</div>
 	);
 }
@@ -195,7 +201,7 @@ function Pipeline({ item, lastActive }: { item: TrainingItem; lastActive?: Train
 /* ---- Run table ------------------------------------------------------------- */
 
 function noteFor(it: TrainingItem): { text: string; tone: "neg" | "warn" | "muted" } | null {
-	if (!it.error) return null;
+	if (!it.error || isNotRun(it)) return null;
 	if (it.step === "error") return { text: it.error, tone: "neg" };
 	if (it.step === "skipped") return { text: it.error, tone: "muted" };
 	return { text: it.error, tone: "warn" };
@@ -239,36 +245,41 @@ function Validated({ it }: { it: TrainingItem }) {
 	);
 }
 
-function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; onFollow: (v: boolean) => void }) {
+function RunTable({ t, now, follow, onFollow }: { t: TrainingState; now: number; follow: boolean; onFollow: (v: boolean) => void }) {
 	const openAnalyze = useApp((s) => s.openAnalyze);
 	const scroller = useRef<HTMLDivElement>(null);
 	const programmatic = useRef(0);
 	const current = currentIndex(t);
+	const upNext = upNextIndex(t);
+	// The row the table follows: the token in flight, or the next one during the wait.
+	const focus = current >= 0 ? current : upNext;
 
-	// Remember the last in-flight step per item so a failure shows the right stage.
+	// Fallback for states without failedStep: the last in-flight step this view saw.
 	const lastActive = useRef<{ runId: number; map: Map<string, TrainingStep> }>({ runId: -1, map: new Map() });
 	if (lastActive.current.runId !== t.runId) lastActive.current = { runId: t.runId, map: new Map() };
-	for (const it of t.items) if (!isTerminal(it.step) && it.step !== "queued") lastActive.current.map.set(it.mint, it.step);
+	for (const it of t.items) if (ACTIVE_STEPS.has(it.step)) lastActive.current.map.set(it.mint, it.step);
 
 	useLayoutEffect(() => {
-		if (!follow || current < 0) return;
-		const el = scroller.current?.querySelector<HTMLElement>(`[data-row="${current}"]`);
-		if (!el || !scroller.current) return;
+		if (!follow || focus < 0) return;
 		const box = scroller.current;
+		const el = box?.querySelector<HTMLElement>(`[data-row="${focus}"]`);
+		if (!el || !box) return;
 		const top = el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
 		programmatic.current = Date.now();
 		box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-	}, [current, follow]);
+	}, [focus, follow]);
 
 	function onScroll() {
 		if (Date.now() - programmatic.current < 700) return;
 		const box = scroller.current;
-		if (!box || current < 0) return;
-		const el = box.querySelector<HTMLElement>(`[data-row="${current}"]`);
+		if (!box || focus < 0) return;
+		const el = box.querySelector<HTMLElement>(`[data-row="${focus}"]`);
 		if (!el) return;
 		const visible = el.offsetTop >= box.scrollTop + 32 && el.offsetTop + el.offsetHeight <= box.scrollTop + box.clientHeight;
 		if (visible !== follow) onFollow(visible);
 	}
+
+	const nextSecs = t.nextAt ? Math.max(0, Math.ceil((t.nextAt - now) / 1000)) : null;
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-surface-2">
@@ -283,7 +294,7 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 							<th scope="col" className="pl-4 font-medium xl:pl-3 2xl:w-[168px]">
 								Token
 							</th>
-							<th scope="col" className="w-[108px] px-3 font-medium xl:w-[192px] 2xl:w-[228px]" title="Fetch snapshot, analyze, submit">
+							<th scope="col" className="w-[108px] px-3 font-medium 2xl:w-[228px]" title="Fetch snapshot, analyze, submit">
 								Pipeline
 							</th>
 							<th scope="col" className="w-[112px] px-3 font-medium">
@@ -306,9 +317,17 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 					<tbody>
 						{t.items.map((it, i) => {
 							const isCurrent = i === current;
+							const isNext = i === upNext;
 							const note = noteFor(it);
 							const symbol = it.symbol ? `$${it.symbol}` : shortMint(it.mint);
-							const q = it.step === "queued";
+							// Rows without an outcome yet (queued, in flight, not run) leave the result cells empty.
+							const open = !isTerminal(it.step) || isNotRun(it);
+							const dim = it.step === "queued" || isNotRun(it);
+							// Left edge marker for the row in flight (brand) or up next (muted); sits in the first visible cell.
+							const marker =
+								isCurrent || isNext ? (
+									<span aria-hidden className={cn("absolute inset-y-1.5 left-0 w-0.5 rounded-full", isCurrent ? "bg-brand" : "bg-line-control")} />
+								) : null;
 							return (
 								<tr
 									key={it.mint}
@@ -317,14 +336,15 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 									className={cn(
 										"h-row border-b border-line last:border-b-0",
 										isCurrent ? "bg-brand/5" : "hover:bg-surface-3/50",
-										it.step === "queued" && "text-fg-3",
+										dim && "text-fg-3",
 									)}
 								>
-									<td className="num hidden whitespace-nowrap pl-4 text-sm text-fg-3 xl:table-cell">
-										<span className={cn("relative", isCurrent && "text-fg-2")}>{it.step === "queued" ? "Queued" : clockTime(it.updatedAt)}</span>
+									<td className="num relative hidden whitespace-nowrap pl-4 text-sm text-fg-3 xl:table-cell">
+										{marker}
+										{isNext ? <span className="text-fg-2">Next</span> : it.step === "queued" ? "Queued" : clockTime(it.updatedAt)}
 									</td>
-									<td className={cn("relative min-w-0 pl-4 xl:pl-3", isCurrent && "")}>
-										{isCurrent && <span aria-hidden className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-brand" />}
+									<td className="relative min-w-0 pl-4 xl:pl-3">
+										<span className="xl:hidden">{marker}</span>
 										<button
 											type="button"
 											onClick={() => openAnalyze(it.mint)}
@@ -333,9 +353,7 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 										>
 											<TokenAvatar mint={it.mint} src={it.image} symbol={it.symbol} size={20} />
 											<span className="min-w-0">
-												<span className={cn("block truncate font-medium group-hover:underline", it.step === "queued" ? "text-fg-2" : "text-fg")}>
-													{symbol}
-												</span>
+												<span className={cn("block truncate font-medium group-hover:underline", dim ? "text-fg-2" : "text-fg")}>{symbol}</span>
 												{note && (
 													<span className={cn("block truncate text-sm 2xl:hidden", NOTE_CLS[note.tone])} title={note.text}>
 														{note.text}
@@ -348,37 +366,37 @@ function RunTable({ t, follow, onFollow }: { t: TrainingState; follow: boolean; 
 										<Pipeline item={it} lastActive={lastActive.current.map.get(it.mint)} />
 									</td>
 									<td className="px-3">
-										{it.sentiment ? <SentimentBadge value={it.sentiment} score={it.score} /> : q ? null : <span className="text-fg-disabled">—</span>}
+										{it.sentiment ? (
+											<SentimentBadge value={it.sentiment} score={it.score} />
+										) : isNext && nextSecs != null ? (
+											<span className="num whitespace-nowrap text-sm text-fg-2">Starts in {nextSecs}s</span>
+										) : open ? null : (
+											<span className="text-fg-disabled">—</span>
+										)}
 									</td>
-									<td className="hidden px-3 xl:table-cell">
-										{q ? null : <Engine it={it} />}
-									</td>
+									<td className="hidden px-3 xl:table-cell">{open && !it.source ? null : <Engine it={it} />}</td>
 									<td className="num px-3 text-right">
 										{it.step === "done" && it.xpEarned != null ? (
 											<span className={cn("font-semibold", it.xpEarned > 0 ? "text-brand" : "text-fg-3")}>+{integer(it.xpEarned)}</span>
-										) : q ? null : (
+										) : open ? null : (
 											<span className="text-fg-disabled">—</span>
 										)}
-										</td>
-										<td className="px-3 text-base">
-										{q ? null : <Validated it={it} />}
 									</td>
+									<td className="px-3">{open ? null : <Validated it={it} />}</td>
 									<td className="hidden pr-4 2xl:table-cell">
 										{note ? (
 											<span className={cn("block truncate text-sm", NOTE_CLS[note.tone])} title={note.text}>
 												{note.text}
 											</span>
-										) : q ? null : (
-											<span className="text-fg-disabled">—</span>
-										)}
-										</td>
-										</tr>
+										) : null}
+									</td>
+								</tr>
 							);
 						})}
 					</tbody>
 				</table>
 			</div>
-			{!follow && current >= 0 && (
+			{!follow && focus >= 0 && (
 				<div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
 					<Button size="sm" className="pointer-events-auto shadow-pop" icon={<ArrowDown className="size-3.5" />} onClick={() => onFollow(true)}>
 						Jump to current token
@@ -399,10 +417,17 @@ const HOW = [
 
 function NoRunYet() {
 	return (
-		<div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-line-strong bg-surface-2/50">
+		<div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto rounded-lg border border-dashed border-line-strong bg-surface-2/50">
 			<div className="w-full max-w-md px-6 py-10">
-				<EmptyState className="px-0 py-0" icon={<Cpu className="size-5" />} title="No training run yet" description="Auto Train submits analyses for a batch of tokens while you do something else." />
-				<ol className="mt-6 space-y-3">
+				{/* EmptyState's own padding cannot be overridden (cn does not merge), so this header is local. */}
+				<div className="flex flex-col items-center text-center">
+					<div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-line-strong bg-surface-2 text-fg-3" aria-hidden>
+						<Cpu className="size-5" />
+					</div>
+					<h2 className="text-md font-semibold text-fg">No training run yet</h2>
+					<p className="mt-1 max-w-sm text-base text-fg-3">Auto Train submits analyses for a batch of tokens while you do something else.</p>
+				</div>
+				<ol className="mt-6 space-y-3 rounded-lg border border-line bg-surface-2 p-4">
 					{HOW.map((h) => (
 						<li key={h.n} className="flex items-start gap-3">
 							<span className="num flex size-6 shrink-0 items-center justify-center rounded-full border border-line-strong bg-surface-3 text-sm font-semibold text-fg-2">
@@ -423,7 +448,9 @@ function NoRunYet() {
 function Summary({ t, onRetry, onClear, canRetry }: { t: TrainingState; onRetry: () => void; onClear: () => void; canRetry: boolean }) {
 	const retry = retryTargets(t).length;
 	const stopped = wasStopped(t);
-	const notRun = t.items.filter((it) => it.step === "skipped" && it.error === "Stopped").length;
+	const notRun = notRunCount(t);
+	const retryLabel =
+		notRun === retry ? `Run remaining (${integer(retry)})` : notRun === 0 && retry === t.failed ? `Retry failed (${integer(retry)})` : `Retry ${plural(retry, "token")}`;
 	const parts = [`${integer(t.completed)} submitted`, `+${integer(t.xpEarned)} XP`];
 	if (t.failed > 0) parts.push(`${integer(t.failed)} failed`);
 	const skippedOther = t.skipped - notRun;
@@ -444,7 +471,7 @@ function Summary({ t, onRetry, onClear, canRetry }: { t: TrainingState; onRetry:
 							disabled={!canRetry}
 							title={canRetry ? `Start a new run with the ${plural(retry, "token")} that failed or did not run` : "Add your pump.studio API key first"}
 						>
-							{notRun === retry ? `Run remaining ${integer(retry)}` : `Retry failed (${integer(retry)})`}
+							{retryLabel}
 						</Button>
 					)}
 					<Button size="sm" variant="ghost" onClick={onClear}>
@@ -461,17 +488,24 @@ function Summary({ t, onRetry, onClear, canRetry }: { t: TrainingState; onRetry:
 /* ---- Panel ----------------------------------------------------------------- */
 
 export function RunPanel({
-	t,
+	t: state,
 	onRetry,
 	canRetry,
 	engineLabel,
+	liveIntervalSec,
 }: {
 	t: TrainingState;
 	onRetry: () => void;
 	canRetry: boolean;
 	engineLabel: string;
+	/** Bun reads the interval from config before every wait, so a change applies to the running batch. */
+	liveIntervalSec?: number;
 }) {
-	const phase = phaseOf(t);
+	const phase = phaseOf(state);
+	const t = useMemo(
+		() => (phase === "running" && liveIntervalSec != null && liveIntervalSec !== state.intervalSec ? { ...state, intervalSec: liveIntervalSec } : state),
+		[state, phase, liveIntervalSec],
+	);
 	const now = useNow(phase === "running" && !!t.nextAt);
 	const [follow, setFollow] = useState(true);
 	const [clearedRun, setClearedRun] = useState(-1);
@@ -513,7 +547,7 @@ export function RunPanel({
 						<Summary t={t} onRetry={onRetry} canRetry={canRetry} onClear={() => setClearedRun(t.runId)} />
 					)}
 					<Kpis t={t} phase={phase} now={now} />
-					<RunTable t={t} follow={follow} onFollow={setFollow} />
+					<RunTable t={t} now={now} follow={follow} onFollow={setFollow} />
 				</>
 			)}
 		</div>

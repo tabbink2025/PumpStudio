@@ -70,14 +70,30 @@ export function about(sec: number): string {
 export const ACTIVE_STEPS: ReadonlySet<TrainingStep> = new Set(["fetching", "analyzing", "submitting"]);
 export const isTerminal = (s: TrainingStep) => s === "done" || s === "error" || s === "skipped";
 
+/** Queued tokens that never ran because the user (or a bad key) stopped the run. */
+export const isNotRun = (it: TrainingItem) => it.step === "skipped" && it.error === "Stopped";
+
+/** Tokens the loop actually got to (not-run tokens do not count as progress). */
 export function processedCount(t: TrainingState): number {
 	let n = 0;
-	for (const it of t.items) if (isTerminal(it.step)) n++;
+	for (const it of t.items) if (isTerminal(it.step) && !isNotRun(it)) n++;
+	return n;
+}
+
+export function notRunCount(t: TrainingState): number {
+	let n = 0;
+	for (const it of t.items) if (isNotRun(it)) n++;
 	return n;
 }
 
 export function currentIndex(t: TrainingState): number {
 	return t.items.findIndex((it) => ACTIVE_STEPS.has(it.step));
+}
+
+/** During the wait between tokens: the queued token that runs next. */
+export function upNextIndex(t: TrainingState): number {
+	if (t.status !== "running" || currentIndex(t) >= 0) return -1;
+	return t.items.findIndex((it) => it.step === "queued");
 }
 
 export type RunPhase = "none" | "running" | "stopping" | "finished";
@@ -89,7 +105,7 @@ export function phaseOf(t: TrainingState): RunPhase {
 }
 
 export function wasStopped(t: TrainingState): boolean {
-	return t.items.some((it) => it.step === "skipped" && it.error === "Stopped");
+	return t.items.some(isNotRun);
 }
 
 export function retryTargets(t: TrainingState): TrainingTarget[] {
@@ -112,9 +128,9 @@ export const STAGES: ReadonlyArray<{ id: StageId; label: string }> = [
 const STEP_STAGE: Partial<Record<TrainingStep, number>> = { fetching: 0, analyzing: 1, submitting: 2 };
 
 /**
- * State of the three stages for one item. For errors, `lastActive` is the
- * last in-flight step this view saw for the item; without it we infer from
- * the fields that were filled in.
+ * State of the three stages for one item. For errors Bun reports the stage
+ * that failed (`failedStep`); older states fall back to `lastActive` (the last
+ * in-flight step this view saw) and then to the fields that were filled in.
  */
 export function stagesFor(it: TrainingItem, lastActive?: TrainingStep): StageState[] {
 	switch (it.step) {
@@ -124,7 +140,8 @@ export function stagesFor(it: TrainingItem, lastActive?: TrainingStep): StageSta
 		case "done":
 			return ["done", "done", "done"];
 		case "error": {
-			const failedAt = lastActive != null ? (STEP_STAGE[lastActive] ?? 0) : it.sentiment ? 2 : 0;
+			const at = it.failedStep ?? lastActive;
+			const failedAt = at != null ? (STEP_STAGE[at] ?? 0) : it.sentiment ? 2 : 0;
 			return [0, 1, 2].map((i) => (i < failedAt ? "done" : i === failedAt ? "failed" : "pending"));
 		}
 		default: {

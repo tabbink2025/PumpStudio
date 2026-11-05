@@ -4,7 +4,9 @@ import { KpiRow, KpiRowSkeleton } from "../components/leaderboard/KpiRow";
 import {
 	DEFAULT_SORT,
 	filterEntries,
+	isDefaultSort,
 	nextSort,
+	sortLabel,
 	sortEntries,
 	useAnalysisStats,
 	useNow,
@@ -39,6 +41,8 @@ export function LeaderboardView({ active }: { active: boolean }) {
 	const filterId = useId();
 	const [cardRef, cardWidth] = useWidth<HTMLDivElement>();
 	const tier: Tier = cardWidth === 0 || cardWidth >= 960 ? "wide" : "narrow";
+	const [kpiRef, kpiWidth] = useWidth<HTMLDivElement>();
+	const kpiCompact = kpiWidth > 0 && kpiWidth < 1040;
 
 	const ranked = useMemo<RankedEntry[]>(
 		() => (stats ? stats.leaderboard.map((e, i) => ({ ...e, rank: i + 1 })) : EMPTY),
@@ -125,7 +129,9 @@ export function LeaderboardView({ active }: { active: boolean }) {
 					</Card>
 				) : (
 					<>
-						<div className="shrink-0">{stats ? <KpiRow stats={stats} /> : <KpiRowSkeleton />}</div>
+						<div ref={kpiRef} className="shrink-0">
+								{stats ? <KpiRow stats={stats} compact={kpiCompact} /> : <KpiRowSkeleton compact={kpiCompact} />}
+							</div>
 
 						<div ref={cardRef} className="flex min-h-[320px] flex-1 flex-col">
 							<Card as="section" className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -195,7 +201,21 @@ export function LeaderboardView({ active }: { active: boolean }) {
 													</>
 												)}
 											</span>
-											<span className="hidden shrink-0 truncate lg:inline">Ranked by number of analyses</span>
+											<span className="shrink-0 truncate">
+												{sortLabel(sort)}
+												{!isDefaultSort(sort) && (
+													<>
+														{" · "}
+														<button
+															type="button"
+															onClick={() => setSort(DEFAULT_SORT)}
+															className="rounded text-fg-2 underline-offset-2 hover:text-fg hover:underline"
+														>
+															Reset
+														</button>
+													</>
+												)}
+											</span>
 										</footer>
 									</>
 								)}
@@ -244,10 +264,10 @@ function Toolbar({
 					value={query}
 					onChange={(e) => onQuery?.(e.target.value)}
 					onKeyDown={(e) => {
-						if (e.key === "Escape" && query) {
-							e.preventDefault();
-							onQuery?.("");
-						}
+						if (e.key !== "Escape") return;
+						e.preventDefault();
+						if (query) onQuery?.("");
+						else e.currentTarget.blur();
 					}}
 					placeholder="Filter by name, ticker or mint"
 					autoComplete="off"

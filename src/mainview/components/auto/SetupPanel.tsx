@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useState, type ReactNode } from "react";
-import { AlertTriangle, Bot, Check, ChevronRight, EyeOff, RotateCw, Search, SearchX, Star, X } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCheck, ChevronRight, EyeOff, RotateCw, Search, SearchX, Star, X } from "lucide-react";
 import { shortMint } from "../../../shared/analysis";
 import type { PublicConfig } from "../../../shared/types";
 import { cn } from "../../lib/cn";
@@ -7,7 +7,7 @@ import { ago, integer, plural, titleCase, usdCompact } from "../../lib/format";
 import { useApp, type MyAnalysis } from "../../lib/store";
 import { TokenAvatar } from "../token/widgets";
 import { IconButton } from "../ui/Button";
-import { Badge, EmptyState, ErrorState, FieldLabel, FieldMessage, Segmented, Skeleton, Switch } from "../ui/primitives";
+import { Badge, EmptyState, ErrorState, FieldMessage, Segmented, Skeleton, Switch } from "../ui/primitives";
 import {
 	about,
 	engineOf,
@@ -59,13 +59,13 @@ const TokenRow = memo(function TokenRow({
 				{token.name && <span className="ml-1.5 text-fg-3">{token.name}</span>}
 			</span>
 			{mine && (
-				<Badge
-					tone="neutral"
-					icon={<Check className="size-3" aria-hidden />}
+				<span
 					title={`You analyzed this ${ago(mine.at)}: ${titleCase(mine.sentiment)} ${mine.score}`}
+					className="inline-flex h-5 shrink-0 items-center gap-1 rounded border border-line-strong bg-surface-3 px-1 text-[11px] font-medium leading-none text-fg-2"
 				>
-					Analyzed
-				</Badge>
+					<CheckCheck className="size-3" aria-hidden />
+					<span className="sr-only 2xl:not-sr-only">Analyzed</span>
+				</span>
 			)}
 			<span className="num w-[52px] shrink-0 text-right text-sm text-fg-2">{token.mcap != null ? usdCompact(token.mcap) : ""}</span>
 		</label>
@@ -153,38 +153,53 @@ function IntervalField({ config }: { config: PublicConfig | null }) {
 		else setDraft(String(saved));
 	}
 
+	const message =
+		invalid && draft.trim() !== ""
+			? n > MAX_INTERVAL
+				? `Maximum is ${MAX_INTERVAL} s. It is lowered to ${MAX_INTERVAL} s when you leave the field.`
+				: `Minimum is ${MIN_INTERVAL} s. It is raised to ${MIN_INTERVAL} s when you leave the field.`
+			: "Minimum 6 s. pump.studio accepts 10 submissions per minute.";
+
 	return (
 		<div>
-			<FieldLabel htmlFor={id} hint={flash ? <span className="text-pos">Saved</span> : undefined}>
-				Interval between tokens
-			</FieldLabel>
-			<div className="field flex h-8 w-32 items-center pr-2.5">
-				<input
-					id={id}
-					type="number"
-					inputMode="numeric"
-					min={MIN_INTERVAL}
-					max={MAX_INTERVAL}
-					step={1}
-					value={draft}
-					disabled={!config}
-					aria-invalid={invalid || undefined}
-					aria-describedby={hintId}
-					onChange={(e) => setDraft(e.target.value)}
-					onBlur={() => void commit()}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-					}}
-					className="num h-full min-w-0 flex-1 bg-transparent px-2.5 text-base text-fg outline-none"
-				/>
-				<span className="text-sm text-fg-3" aria-hidden>
-					sec
-				</span>
+			<div className="flex items-center justify-between gap-4">
+				<label htmlFor={id} className="min-w-0 text-base font-medium text-fg">
+					Interval between tokens
+				</label>
+				<div className="flex shrink-0 items-center gap-2">
+					{flash && (
+						<span className="inline-flex items-center gap-1 text-sm text-pos" role="status">
+							<Check className="size-3.5" aria-hidden />
+							Saved
+						</span>
+					)}
+					<div className="field flex h-8 w-24 items-center pr-2.5">
+						<input
+							id={id}
+							type="number"
+							inputMode="numeric"
+							min={MIN_INTERVAL}
+							max={MAX_INTERVAL}
+							step={1}
+							value={draft}
+							disabled={!config}
+							aria-invalid={invalid || undefined}
+							aria-describedby={hintId}
+							onChange={(e) => setDraft(e.target.value)}
+							onBlur={() => void commit()}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+							}}
+							className="num h-full min-w-0 flex-1 bg-transparent px-2.5 text-right text-base text-fg outline-none"
+						/>
+						<span className="text-sm text-fg-3" aria-hidden>
+							sec
+						</span>
+					</div>
+				</div>
 			</div>
 			<FieldMessage id={hintId} error={invalid && draft.trim() !== ""}>
-				{invalid && draft.trim() !== "" && n < MIN_INTERVAL
-					? `Minimum is ${MIN_INTERVAL} s. It is raised to ${MIN_INTERVAL} s when you leave the field.`
-					: "Minimum 6 s. pump.studio accepts 10 submissions per minute."}
+				{message}
 			</FieldMessage>
 		</div>
 	);
@@ -195,12 +210,8 @@ function EngineLine({ config }: { config: PublicConfig | null }) {
 	const engine = engineOf(config);
 	return (
 		<div>
-			<div className="text-sm font-medium text-fg-2">Analysis engine</div>
-			<div className="mt-1.5 flex min-w-0 items-center gap-2 text-base text-fg" title={engine.label}>
-				<Bot className={cn("size-4 shrink-0", engine.ai ? "text-violet" : "text-fg-3")} aria-hidden />
-				<span className="min-w-0 truncate">{engine.label}</span>
-				{engine.ai && <Badge tone="violet">AI</Badge>}
-				<span className="flex-1" />
+			<div className="flex items-center justify-between gap-4">
+				<span className="text-base font-medium text-fg">Analysis engine</span>
 				<button
 					type="button"
 					onClick={() => setView("settings")}
@@ -209,6 +220,11 @@ function EngineLine({ config }: { config: PublicConfig | null }) {
 				>
 					Change
 				</button>
+			</div>
+			<div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-fg-2" title={engine.label}>
+				<Bot className={cn("size-3.5 shrink-0", engine.ai ? "text-violet" : "text-fg-3")} aria-hidden />
+				<span className="min-w-0 truncate">{config ? engine.label : "Loading…"}</span>
+				{engine.ai && <Badge tone="violet">AI</Badge>}
 			</div>
 			{engine.missingKey && (
 				<p className="mt-1.5 flex items-start gap-1.5 text-sm text-warn">
@@ -238,7 +254,11 @@ export function PlanCard({ count, config, blocked, running }: { count: number; c
 						{plural(runCount, "token")} · {about(estimateSec(runCount, interval, ai))} at {interval} s
 					</p>
 					<p className="mt-0.5 truncate text-sm text-fg-2" title={engine.label}>
-						{ai ? `${engine.label} (up to ${plural(runCount, "AI call")})` : `${engine.label}, no AI calls`}
+						{ai
+							? `${engine.label} (up to ${plural(runCount, "AI call")})`
+							: engine.missingKey
+								? `Rules, no ${engine.provider} key set`
+								: "Rules, no AI calls"}
 					</p>
 					{count > MAX_TARGETS && (
 						<p className="mt-1.5 text-sm text-warn">
@@ -393,7 +413,8 @@ export function SetupPanel(p: SetupPanelProps) {
 										p.onQuery("");
 									}
 								}}
-								placeholder="Filter by name or symbol"
+								placeholder="Filter tokens"
+								title="Filter by name, symbol or mint"
 								className="h-full min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-3"
 							/>
 							{p.query && (
@@ -472,7 +493,7 @@ export function SetupPanel(p: SetupPanelProps) {
 						)}
 					</button>
 					{settingsOpen && (
-						<div id={settingsId} className="mt-3 space-y-4 pb-1">
+						<div id={settingsId} className="mt-3 space-y-3.5 pb-1">
 							<IntervalField config={p.config} />
 							<Switch
 								label="Skip tokens analyzed in the last 2 minutes"

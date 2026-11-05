@@ -56,8 +56,12 @@ export function StartDialog({
 			onClose={close}
 			labelledBy={titleId}
 			width={520}
-			title={`Submit ${plural(count, retry ? "analysis again" : "analysis", retry ? "analyses again" : "analyses")}?`}
-			description={retry ? "Retry the tokens that failed or were skipped in the last run." : "Your agent analyzes each token and submits the result to pump.studio."}
+			title={`Submit ${plural(count, "analysis", "analyses")}?`}
+			description={
+				retry
+					? "Runs the tokens that failed, were skipped or did not run in the last batch."
+					: "Your agent analyzes each token and submits the result to pump.studio."
+			}
 			footer={
 				<>
 					<Button variant="ghost" onClick={close} disabled={starting}>
@@ -93,8 +97,9 @@ export function StartDialog({
 					<Row label="Interval">Every {interval} s</Row>
 					<Row label="Estimated time">{about(estimateSec(count, interval, ai))}</Row>
 					<Row label="Engine" title={engine.label}>
-						{engine.label}
+						{engine.missingKey ? "Rules" : engine.label}
 						{ai && <span className="text-fg-3"> · up to {plural(count, "AI call")}</span>}
+						{engine.missingKey && <span className="text-fg-3"> · no {engine.provider} key</span>}
 					</Row>
 					<Row label="Skip recent">{config?.skipRecentlyAnalyzed ? "On, skips tokens analyzed in the last 2 min" : "Off"}</Row>
 				</dl>

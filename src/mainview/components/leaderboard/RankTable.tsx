@@ -1,11 +1,25 @@
-import { memo, type ReactNode } from "react";
-import { ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, ChevronsUpDown, Medal, Minus, Trophy, Zap } from "lucide-react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	ArrowDown,
+	ArrowDownRight,
+	ArrowUp,
+	ArrowUpRight,
+	Check,
+	ChevronsUpDown,
+	Copy,
+	Medal,
+	Minus,
+	Trophy,
+	Zap,
+} from "lucide-react";
+import { shortMint } from "../../../shared/analysis";
 import type { Sentiment } from "../../../shared/types";
 import { cn } from "../../lib/cn";
 import { ago, integer, titleCase } from "../../lib/format";
-import type { MyAnalysis } from "../../lib/store";
+import { errorMessage } from "../../lib/rpc";
+import { toast, type MyAnalysis } from "../../lib/store";
 import { CopyMint, Meter, SENTIMENT_TONE, SentimentBadge, TokenAvatar } from "../token/widgets";
-import { Button } from "../ui/Button";
+import { Button, IconButton } from "../ui/Button";
 import { Badge, Skeleton } from "../ui/primitives";
 import { scoreTone, type RankedEntry, type Sort, type SortKey } from "./model";
 
@@ -24,7 +38,7 @@ function Cols({ tier }: { tier: Tier }) {
 			<col style={{ width: w ? 120 : 108 }} />
 			<col style={{ width: w ? 128 : 108 }} />
 			<col style={{ width: w ? 150 : 108 }} />
-			<col style={{ width: 112 }} />
+			<col style={{ width: w ? 112 : 52 }} />
 		</colgroup>
 	);
 }
@@ -138,7 +152,12 @@ function CountCell({ count, max, tier }: { count: number; max: number; tier: Tie
 
 function ScoreCell({ score, tier }: { score?: number; tier: Tier }) {
 	if (score == null || !Number.isFinite(score)) {
-		return <span className="num text-fg-3">—</span>;
+		return (
+			<span className="num text-fg-3">
+				<span aria-hidden>—</span>
+				<span className="sr-only">No score</span>
+			</span>
+		);
 	}
 	return (
 		<div className="flex items-center justify-end gap-2">
@@ -172,6 +191,39 @@ function MineCell({ mine, tier, now }: { mine?: MyAnalysis; tier: Tier; now: num
 	);
 }
 
+/** Hover / keyboard-focus reveal for per-row secondary controls. */
+const REVEAL =
+	"opacity-0 transition-opacity duration-fast focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100";
+
+function CopyIcon({ mint, className }: { mint: string; className?: string }) {
+	const [copied, setCopied] = useState(false);
+	const timer = useRef<ReturnType<typeof setTimeout>>();
+	useEffect(() => () => clearTimeout(timer.current), []);
+	async function copy() {
+		try {
+			await navigator.clipboard.writeText(mint);
+		} catch (err) {
+			toast({ kind: "error", title: "Could not copy the mint address", description: errorMessage(err) });
+			return;
+		}
+		setCopied(true);
+		clearTimeout(timer.current);
+		timer.current = setTimeout(() => setCopied(false), 1500);
+		toast({ kind: "success", title: "Mint address copied", description: shortMint(mint, 6, 6), duration: 2500 });
+	}
+	return (
+		<IconButton
+			size="sm"
+			label="Copy mint address"
+			title={`Copy mint ${mint}`}
+			onClick={copy}
+			className={cn("size-6 text-fg-3", className)}
+		>
+			{copied ? <Check className="size-3.5 text-pos" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+		</IconButton>
+	);
+}
+
 /* ---- Row ------------------------------------------------------------------- */
 
 const Row = memo(function Row({
@@ -190,12 +242,13 @@ const Row = memo(function Row({
 	onAnalyze: (mint: string) => void;
 }) {
 	const sym = entry.symbol ? `$${entry.symbol}` : null;
+	const label = sym ?? entry.name ?? shortMint(entry.mint);
 	return (
 		<tr className="group h-row transition-colors duration-fast focus-within:bg-surface-2 hover:bg-surface-2">
 			<td className={cn("border-b border-line text-right", CELL)}>
 				<RankCell rank={entry.rank} />
 			</td>
-			<td className={cn("relative border-b border-line", CELL)}>
+			<td className={cn("border-b border-line", CELL)}>
 				<div className="flex min-w-0 items-center gap-2.5">
 					<TokenAvatar src={entry.image} symbol={entry.symbol} mint={entry.mint} size={28} />
 					<div className="flex min-w-0 items-baseline gap-2">
@@ -208,21 +261,26 @@ const Row = memo(function Row({
 							</span>
 						)}
 					</div>
-					<CopyMint
-						mint={entry.mint}
-						className={cn(
-							"h-6 shrink-0 opacity-0 transition-opacity duration-fast focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100",
-							// Narrow: float over the end of the name instead of reserving its width.
-							tier === "narrow" && "absolute right-[var(--cell-px)] top-1/2 -translate-y-1/2 border border-line-strong bg-surface-2",
-						)}
-					/>
+					{tier === "wide" ? (
+						<CopyMint mint={entry.mint} className={cn("h-6 shrink-0", REVEAL)} />
+					) : (
+						// Narrow: icon only, so the ticker and name keep their room on hover.
+						<CopyIcon mint={entry.mint} className={cn("ml-auto", REVEAL)} />
+					)}
 				</div>
 			</td>
 			<td className={cn("border-b border-line text-right", CELL)}>
 				<CountCell count={entry.count} max={max} tier={tier} />
 			</td>
 			<td className={cn("border-b border-line", CELL)}>
-				{entry.lastSentiment ? <SentimentBadge value={entry.lastSentiment} /> : <span className="text-fg-3">—</span>}
+				{entry.lastSentiment ? (
+					<SentimentBadge value={entry.lastSentiment} />
+				) : (
+					<span className="text-fg-3">
+						<span aria-hidden>—</span>
+						<span className="sr-only">No call yet</span>
+					</span>
+				)}
 			</td>
 			<td className={cn("border-b border-line text-right", CELL)}>
 				<ScoreCell score={entry.lastScore} tier={tier} />
@@ -231,16 +289,27 @@ const Row = memo(function Row({
 				<MineCell mine={mine} tier={tier} now={now} />
 			</td>
 			<td className={cn("border-b border-line text-right", CELL)}>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon={<Zap className="size-3.5" aria-hidden />}
-					onClick={() => onAnalyze(entry.mint)}
-					aria-label={`Analyze ${sym ?? entry.name ?? entry.mint}`}
-					className="text-fg-2 group-hover:bg-surface-3 group-hover:text-fg"
-				>
-					Analyze
-				</Button>
+				{tier === "wide" ? (
+					<Button
+						size="sm"
+						variant="ghost"
+						icon={<Zap className="size-3.5" aria-hidden />}
+						onClick={() => onAnalyze(entry.mint)}
+						aria-label={`Analyze ${label}`}
+						className="text-fg-2 group-hover:bg-surface-3 group-hover:text-fg"
+					>
+						Analyze
+					</Button>
+				) : (
+					<IconButton
+						size="sm"
+						label={`Analyze ${label}`}
+						onClick={() => onAnalyze(entry.mint)}
+						className="group-hover:bg-surface-3 group-hover:text-fg"
+					>
+						<Zap className="size-3.5" aria-hidden />
+					</IconButton>
+				)}
 			</td>
 		</tr>
 	);
@@ -337,7 +406,7 @@ export function RankTableSkeleton({ tier, rows = 12 }: { tier: Tier; rows?: numb
 						</td>
 						<td className={cn("border-b border-line", CELL)} />
 						<td className={cn("border-b border-line", CELL)}>
-							<Skeleton className="ml-auto h-6 w-16 rounded" />
+							<Skeleton className={cn("ml-auto h-6 rounded", tier === "wide" ? "w-16" : "w-6")} />
 						</td>
 					</tr>
 				))}

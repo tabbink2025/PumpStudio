@@ -59,11 +59,13 @@ export function sortEntries(list: RankedEntry[], sort: Sort): RankedEntry[] {
 	return out;
 }
 
-/** Match on ticker (with or without $), name or mint (also accepts pasted links). */
+/** Match on ticker, name or mint (also accepts pasted links). A leading $ matches ticker prefixes. */
 export function filterEntries(list: RankedEntry[], query: string): RankedEntry[] {
 	const q = query.trim().toLowerCase().replace(/^\$/, "");
 	if (!q) return list;
 	const mint = extractMint(query);
+	// "$TA" means a ticker: match the start of the symbol only.
+	if (query.trim().startsWith("$")) return list.filter((e) => (e.symbol ?? "").toLowerCase().startsWith(q));
 	return list.filter((e) => {
 		if (mint && e.mint === mint) return true;
 		return (
@@ -111,18 +113,7 @@ export function useAnalysisStats(active: boolean): StatsState {
 		inflight.current = true;
 		setLoading(true);
 		try {
-			// REVIEW-DEBUG-START
-			const dbg = new URLSearchParams(location.search);
-			if ((window as unknown as { __lbFail?: boolean }).__lbFail || dbg.has("lbfail")) {
-				await new Promise((r) => setTimeout(r, 300));
-				throw new Error("pump.studio did not respond in time (request timed out after 15s).");
-			}
-			if (dbg.has("lbslow")) await new Promise((r) => setTimeout(r, 60_000));
-			// REVIEW-DEBUG-END
-			let s = await bun.getAnalysisStats(LEADERBOARD_LIMIT);
-			// REVIEW-DEBUG-START
-			if (dbg.has("lbempty")) s = { ...s, leaderboard: [], totalAnalyses: 0, uniqueTokens: 0, progress: 0 };
-			// REVIEW-DEBUG-END
+			const s = await bun.getAnalysisStats(LEADERBOARD_LIMIT);
 			if (id !== reqId.current) return;
 			setStats(s);
 			setError(undefined);
