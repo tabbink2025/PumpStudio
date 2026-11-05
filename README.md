@@ -25,7 +25,11 @@ Also: a command palette (<kbd>⌘K</kbd> / <kbd>Ctrl K</kbd>) that accepts a min
 <p align="center">
   <img src="docs/screenshots/analyze.png" alt="Analyze screen" width="49%" />
   <img src="docs/screenshots/auto-train.png" alt="Auto Train screen" width="49%" />
+  <img src="docs/screenshots/leaderboard.png" alt="Leaderboard screen" width="49%" />
+  <img src="docs/screenshots/settings-light.png" alt="Settings screen in the light theme" width="49%" />
 </p>
+
+<p align="center"><sub>Screenshots use the built-in demo data (fictional tokens).</sub></p>
 
 ## What changed compared to the original desktop app
 
