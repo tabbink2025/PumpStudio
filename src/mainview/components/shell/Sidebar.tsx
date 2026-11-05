@@ -247,7 +247,7 @@ export function Sidebar() {
 					<Search className="size-4 shrink-0" aria-hidden />
 					{!collapsed && (
 						<>
-							<span className="flex-1 truncate text-left">Search or paste mint</span>
+							<span className="flex-1 truncate text-left">Search</span>
 							<Kbd>{MOD === "⌘" ? "⌘K" : "Ctrl K"}</Kbd>
 						</>
 					)}

@@ -182,7 +182,7 @@ export default function App() {
 	return (
 		<div className="flex h-full bg-bg text-fg">
 			<Sidebar />
-			<main className="relative flex min-w-0 flex-1 flex-col">
+			<main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
 				{isDemo && (
 					<div className="shrink-0 border-b border-warn/25 bg-warn/5 px-5 py-1.5 text-sm text-warn">
 						Demo mode: generated sample data, nothing is sent to pump.studio. Run the desktop app to use your real account.

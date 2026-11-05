@@ -1,26 +1,31 @@
-# Pump Studio Trainer — Electrobun Desktop App
+# Pump.studio desktop (Electrobun)
 
-No-code AI agent training for Pump Studio. Electrobun (Bun + native WebView).
+Desktop app for Pump Studio: browse pump.fun tokens, label them (sentiment, score, risk, quant fields) and submit for XP, manually, with AI auto-fill (Claude / OpenAI) or in batches (Auto Train).
 
-IMPORTANT: This is NOT Electron. Do not use Electron APIs.
+IMPORTANT: This is Electrobun (Bun + system WebView), NOT Electron. Do not use Electron APIs.
 
-## Architecture
-- Main process (Bun): src/bun/ — API client, AI orchestrator, config store
-- View layer (React + Tailwind): src/mainview/ — liquid glass UI
-- Shared types: src/shared/types.ts — IPC message types
+## Layout
+- src/bun/ main process: index.ts (windows, menus, typed RPC), api.ts (Pump Studio client), orchestrator.ts (AI), training.ts (batch loop), config.ts (keys, 0600)
+- src/shared/ types.ts, analysis.ts (heuristics from pump-quant, validation, buildPayload), rpc-schema.ts. No electrobun imports here.
+- src/mainview/ React UI. Design tokens in styles/tokens.css + tailwind.config.js. Primitives in components/ui, screens in views/.
+- tests/ bun test
+
+## RPC
+- Bun side: BrowserView.defineRPC<PumpStudioRPC>; view side: Electroview.defineRPC with maxRequestTime 180000 (default is 1000 ms).
+- bun.requests are called by the view; webview.messages (trainingState, xp, command) are pushed by Bun.
+- Handlers must throw Error instances (only .message crosses the bridge).
+- The view never receives API keys: loadConfig returns PublicConfig with masked hints.
+- Outside the desktop app the view uses lib/demo.ts (generated data).
 
 ## Pump Studio API
-Base: https://api.pump.studio | Auth: X-API-Key header (ps_xxx)
-- GET /api/v1/market — token discovery
-- GET /api/v1/datapoint?mint=X — 71-field token snapshot
-- POST /api/v1/analysis/submit — submit analysis, earn XP
-- GET /api/v1/analysis/schema — valid fields reference
+Base https://api.pump.studio. Auth: Authorization: Bearer ps_xxx. Responses: { ok, data, error }.
+- GET /api/v1/market?tab=all|live|new|graduated&limit=N&format=json
+- GET /api/v1/datapoint?mint=X  (71-field snapshot; numbers may be null; top10Holding, imageUrl, isLive)
+- POST /api/v1/analysis/submit  (validated when the snapshot is within 15% of live data; 10/min)
+- GET /api/v1/analysis?limit=N  (most analyzed tokens)
+- POST /api/v1/keys/register, GET /api/v1/agent/profile
 
-## Import Patterns
-- Main process: `import { BrowserWindow } from "electrobun/bun"`
-- View context: `import { Electroview } from "electrobun/view"`
-- Views served via `views://` protocol
-
-## Docs
-- Electrobun: https://blackboard.sh/electrobun/llms.txt
-- Pump Studio agents: AGENTS.md in pump.studio repo
+## Electrobun gotchas
+- Menu item `data` is single-use: encode targets in the action string.
+- Drag regions have no opt-out: use an empty background layer (components/shell/chrome.tsx DragRegion).
+- build.copy copies the Vite dist into views/mainview; build with --env=dev|canary|stable.

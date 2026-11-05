@@ -1,6 +1,8 @@
 import {
+	forwardRef,
 	useId,
 	useRef,
+	type CSSProperties,
 	type InputHTMLAttributes,
 	type KeyboardEvent,
 	type ReactNode,
@@ -32,6 +34,7 @@ export function Badge({
 	className,
 	title,
 	dot,
+	truncate,
 }: {
 	tone?: Tone;
 	icon?: ReactNode;
@@ -39,19 +42,22 @@ export function Badge({
 	className?: string;
 	title?: string;
 	dot?: boolean;
+	/** Allow the badge to shrink and truncate inside flex rows. */
+	truncate?: boolean;
 }) {
 	return (
 		<span
 			title={title}
 			className={cn(
-				"inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded border px-1.5 text-[11px] font-medium leading-none",
+				"inline-flex h-5 items-center gap-1 whitespace-nowrap rounded border px-1.5 text-[11px] font-medium leading-none",
+				truncate ? "min-w-0 max-w-full" : "shrink-0",
 				TONES[tone],
 				className,
 			)}
 		>
-			{dot && <span className="size-1.5 rounded-full bg-current" aria-hidden />}
+			{dot && <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden />}
 			{icon}
-			{children}
+			{truncate ? <span className="min-w-0 truncate">{children}</span> : children}
 		</span>
 	);
 }
@@ -249,34 +255,31 @@ export function FieldMessage({ error, children, id }: { error?: boolean; childre
 	);
 }
 
-export function TextInput({
-	className,
-	invalid,
-	mono,
-	...rest
-}: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean; mono?: boolean }) {
-	return (
-		<input
-			aria-invalid={invalid || undefined}
-			className={cn("field h-8 w-full px-2.5 text-base", mono && "font-mono text-sm", className)}
-			{...rest}
-		/>
-	);
-}
+export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean; mono?: boolean }>(
+	function TextInput({ className, invalid, mono, ...rest }, ref) {
+		return (
+			<input
+				ref={ref}
+				aria-invalid={invalid || undefined}
+				className={cn("field h-8 w-full px-2.5 text-base", mono && "font-mono text-sm", className)}
+				{...rest}
+			/>
+		);
+	},
+);
 
-export function TextArea({
-	className,
-	invalid,
-	...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
-	return (
-		<textarea
-			aria-invalid={invalid || undefined}
-			className={cn("field w-full resize-none px-2.5 py-2 text-base leading-relaxed", className)}
-			{...rest}
-		/>
-	);
-}
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(
+	function TextArea({ className, invalid, ...rest }, ref) {
+		return (
+			<textarea
+				ref={ref}
+				aria-invalid={invalid || undefined}
+				className={cn("field w-full resize-none px-2.5 py-2 text-base leading-relaxed", className)}
+				{...rest}
+			/>
+		);
+	},
+);
 
 /* ---- Slider + number for 0-100 values -------------------------------- */
 
@@ -364,8 +367,8 @@ export function RangeField({
 
 /* ---- Skeleton -------------------------------------------------------- */
 
-export function Skeleton({ className }: { className?: string }) {
-	return <div aria-hidden className={cn("skeleton skeleton-shimmer", className)} />;
+export function Skeleton({ className, style }: { className?: string; style?: CSSProperties }) {
+	return <div aria-hidden style={style} className={cn("skeleton skeleton-shimmer", className)} />;
 }
 
 /* ---- States ---------------------------------------------------------- */
